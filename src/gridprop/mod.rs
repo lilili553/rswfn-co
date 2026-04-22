@@ -1,0 +1,188 @@
+use ndarray::Array2;
+use rayon::prelude::*;
+use std::f64::{EPSILON, consts::PI};
+
+use crate::base::Vec3;
+use crate::march;
+
+pub mod density;
+pub mod dftgrid;
+pub mod potential;
+pub mod topolog;
+pub mod wfnfunc;
+
+pub struct LineGrid {
+    pub shape: [usize; 1],
+    pub grids: Vec<[f64; 3]>,
+}
+
+impl LineGrid {
+    pub fn new() -> LineGrid {
+        LineGrid { shape: [0], grids: vec![] }
+    }
+
+    pub fn set(&mut self, p0: &Vec3, p1: &Vec3, step: f64) {
+        let vector = p1 - p0;
+        let length = vector.length();
+        let count = (length / step) as usize;
+        let mut grids: Vec<[f64; 3]> = Vec::with_capacity(count as usize * 3);
+        let vector = vector.normalize();
+        for i in 0..count {
+            let point = p0 + (&vector * i as f64) * step;
+            let [px, py, pz] = point.into_arr();
+            grids.push([px, py, pz]);
+        }
+        self.shape = [count];
+        self.grids = grids;
+    }
+
+    pub fn get(&self) -> ([usize; 1], &Vec<[f64; 3]>) {
+        (self.shape, &self.grids)
+    }
+}
+
+pub struct RectGrid {
+    pub shape: [usize; 2],
+    pub grids: Vec<[f64; 3]>,
+}
+
+impl RectGrid {
+    pub fn new() -> Self {
+        RectGrid { shape: [0, 0], grids: vec![] }
+    }
+
+    pub fn set_v1(&mut self, center: &Vec3, normal: &Vec3, vector: &Vec3, size: [f64; 2], step: [f64; 2]) {
+        let vz = normal.normalize();
+        let vx = vector.normalize();
+        let shape = [(size[0] / step[0] + EPSILON).floor() as usize + 1, (size[1] / step[1] + EPSILON).floor() as usize + 1];
+
+        let vy = vx.cross(&vz).normalize();
+        let vx = vz.cross(&vy).normalize();
+
+        let p0 = center - (&vx * shape[0] as f64 * step[0] / 2.0 + &vy * shape[1] as f64 * step[1] / 2.0);
+        let count = shape[0] * shape[1];
+        let mut grids = Vec::with_capacity(count as usize * 3);
+
+        for i in 0..shape[0] {
+            for j in 0..shape[1] {
+                let point = &p0 + &vx * i as f64 * step[0] + &vy * j as f64 * step[1];
+                let [px, py, pz] = point.into_arr();
+                grids.push([px, py, pz]);
+            }
+        }
+        self.shape = shape;
+        self.grids = grids;
+    }
+
+    // 根据三个点获确定一个平面的格点
+    pub fn set_v2(&mut self, p0: &Vec3, p1: &Vec3, p2: &Vec3, step: [f64; 2]) {
+        let v01 = p1 - p0;
+        let v02 = p2 - p0;
+        let vx = v01.normalize();
+        let vn = v02.normalize();
+        let angle = v01.angle(&v02);
+        let xp = v02.project_onto(&vx); // v02在vx上的投影
+        let p00: Vec3;
+        let p01: Vec3;
+        if angle < PI / 2.0 {
+            if xp.length() < v01.length() {
+                p00 = p0.clone();
+                p01 = p1.clone();
+            } else {
+                p00 = p0.clone();
+                p01 = p0 + xp;
+            }
+        } else {
+            p00 = p0 + xp;
+            p01 = p1.clone()
+        }
+        let vz = vx.cross(&vn).normalize();
+        let vy = vz.cross(&vx).normalize();
+        let yp = v02.project_onto(&vy);
+        let p11 = p0 + yp;
+        let lx = (&p01 - &p00).length();
+        let ly = (&p11 - &p00).length();
+        let nx = (lx / step[0]).ceil() as usize;
+        let ny = (ly / step[1]).ceil() as usize;
+        self.set_v3(&p00, &p01, &p11, [nx, ny]);
+    }
+
+    pub fn set_v3(&mut self, p00: &Vec3, p01: &Vec3, p11: &Vec3, size: [usize; 2]) {
+        let vx = p01 - p00;
+        let vy = p11 - p00;
+        let [nx, ny] = size;
+        let dx = vx / nx as f64;
+        let dy = vy / ny as f64;
+        let mut grids = vec![];
+        for i in 0..nx {
+            for j in 0..ny {
+                let pos = p00 + &dx * i as f64 + &dy * j as f64;
+                let [px, py, pz] = pos.into_arr();
+                grids.push([px, py, pz]);
+            }
+        }
+        let shape = [nx, ny];
+        self.shape = shape;
+        self.grids = grids;
+    }
+
+    pub fn get(&self) -> ([usize; 2], &Vec<[f64; 3]>) {
+        (self.shape, &self.grids)
+    }
+
+    pub fn paras(&self, p00: &Vec3, p01: &Vec3, p11: &Vec3) -> [f64; 4] {
+        let vx = (p01 - p00).normalize();
+        let vy = (p11 - p00).normalize();
+        let vz = vx.cross(&vy);
+        let [a, b, c] = vz.into_arr();
+        let d = -vz.dot(&p00);
+        [a, b, c, d]
+    }
+}
+
+pub struct CubeGrid {
+    pub shape: [usize; 3],
+    pub start: [f64; 3],
+    pub steps: [f64; 3],
+}
+
+impl CubeGrid {
+    pub fn new() -> Self {
+        let shape = [0, 0, 0];
+        // let grids = vec![];
+        let start = [0.0, 0.0, 0.0];
+        let steps = [0.0, 0.0, 0.0];
+        CubeGrid { shape, start, steps }
+    }
+
+    pub fn set_v1(&mut self, p0: &[f64; 3], p1: &[f64; 3], step: f64, bord: f64) -> &Self {
+        let p0 = p0.clone().map(|v| v - bord);
+        let p1 = p1.clone().map(|v| v + bord);
+        let [x0, y0, z0] = p0.into();
+        let [x1, y1, z1] = p1.into();
+
+        let nx = ((x1 - x0) / step).ceil() as usize;
+        let ny = ((y1 - y0) / step).ceil() as usize;
+        let nz = ((z1 - z0) / step).ceil() as usize;
+        let shape = [nx as usize, ny as usize, nz as usize];
+        self.shape = shape;
+        self.start = p0.clone();
+        self.steps = [step, step, step];
+        self
+    }
+
+    pub fn get(&self) -> ([usize; 3], Vec<[f64; 3]>) {
+        let [nx, ny, nz] = self.shape;
+        let [x0, y0, z0] = self.start;
+        let [sx, sy, sz] = self.steps;
+        let mut grids = Vec::with_capacity(nx * ny * nz);
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    grids.push([x0 + sx * i as f64, y0 + sy * j as f64, z0 + sz * k as f64]);
+                }
+            }
+        }
+        (self.shape, grids)
+    }
+}

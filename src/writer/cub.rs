@@ -1,0 +1,108 @@
+use crate::base::Mole;
+use crate::datas::consts::BOHR;
+use crate::datas::elems;
+use crate::utils::fort_form;
+use chrono::Local;
+use std::fs::File;
+use std::io::prelude::*;
+
+pub struct CubWriter {
+    pub title: String,       // 标题
+    pub syms: Vec<String>,   // 原子符号
+    pub xyzs: Vec<[f64; 3]>, // 原子坐标
+    pub obts: Vec<isize>,    // 轨道索引
+    pub pos0: [f64; 3],      // 起始坐标
+    pub size: [usize; 3],    // 三个方向的格点数量
+    pub step: [f64; 3],      // 三个方向格点步长
+    pub vals: Vec<Vec<f64>>, // 数值: [轨道,格点]
+    pub file: File,
+}
+
+impl CubWriter {
+    pub fn new(path: &str) -> Self {
+        Self {
+            title: "generate by rswfn".to_string(),
+            syms: vec![],
+            xyzs: vec![],
+            obts: vec![],
+            pos0: [0.0; 3],
+            size: [0; 3],
+            step: [0.0; 3],
+            vals: vec![],
+            file: File::create(path).unwrap(),
+        }
+    }
+
+    pub fn copy_mole(&mut self, mole: &Mole) {
+        self.syms = mole.atoms().syms();
+        self.xyzs = mole.atoms().xyzs_ang().clone();
+    }
+
+    fn write_grids(&mut self) {
+        let now = Local::now();
+        let now = now.format("%Y-%m-%d %H:%M:%S");
+        let nops = self.size[0] * self.size[1] * self.size[2];
+        write!(&mut self.file, "{}\n{} {}\n", self.title, now, nops * self.obts.len()).unwrap();
+        let [nx, ny, nz] = self.size;
+        let [x0, y0, z0] = self.pos0;
+        let [sx, sy, sz] = self.step;
+        let natm = self.syms.len() as isize;
+        write!(&mut self.file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", -natm, x0 / BOHR, y0 / BOHR, z0 / BOHR).unwrap();
+        write!(&mut self.file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", nx, sx / BOHR, 0.0, 0.0).unwrap();
+        write!(&mut self.file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", ny, 0.0, sy / BOHR, 0.0).unwrap();
+        write!(&mut self.file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", nz, 0.0, 0.0, sz / BOHR).unwrap();
+    }
+
+    fn write_coord(&mut self) {
+        let natm = self.syms.len();
+        for i in 0..natm {
+            let sym = &self.syms[i];
+            let atm = elems::sym2atm(sym);
+            let [x, y, z] = self.xyzs[i];
+            write!(&mut self.file, "{:>5}{:>12.6}{:>12.6}{:>12.6}{:>12.6}\n", atm, atm as f64, x, y, z).unwrap();
+        }
+    }
+
+    fn write_value(&mut self) {
+        let nobt = self.obts.len();
+        let npos = self.size[0] * self.size[1] * self.size[2];
+        let obts: Vec<isize> = self.obts.iter().map(|obt| *obt + 1).collect();
+        let mut info: Vec<isize> = vec![nobt as isize];
+        info.extend(obts.clone());
+        for (i, obt) in info.iter().enumerate() {
+            write!(&mut self.file, "{:>5}", obt).unwrap();
+            if (i + 1) % 10 == 0 {
+                write!(&mut self.file, "\n").unwrap();
+            }
+        }
+        if obts.len() % 10 != 0 {
+            write!(&mut self.file, "\n").unwrap();
+        }
+
+        let nz = self.size[2];
+        let mut index = 0;
+        // 对每一个点进行循环
+        for i in 0..npos {
+            // 对每一个轨道进行循环
+            for j in 0..nobt {
+                let val = self.vals[j][i];
+                write!(&mut self.file, "{:>13}", fort_form(val, 5)).unwrap();
+                index += 1;
+                if index == nz * nobt {
+                    write!(&mut self.file, "\n").unwrap();
+                    index = 0;
+                    continue;
+                }
+                if index % 6 == 0 {
+                    write!(&mut self.file, "\n").unwrap();
+                }
+            }
+        }
+    }
+
+    pub fn save(&mut self) {
+        self.write_grids();
+        self.write_coord();
+        self.write_value();
+    }
+}

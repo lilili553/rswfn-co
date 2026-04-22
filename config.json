@@ -1,0 +1,10 @@
+{
+ "bond.limit": 3.4002,
+ "if_buff": true,
+ "render.cloud.step": 0.2,
+ "render.cloud.border": 4.0,
+ "img.space.step": 0.1,
+ "gjf.title": "b3lyp/6-31g(d) pop=full gfinput iop(3/33=1)",
+ "march.isov": 0.03,
+ "march.dens": 0.001
+}
