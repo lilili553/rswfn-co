@@ -29,16 +29,16 @@ impl XyzReader {
                     let caps = r2.captures(line).expect("caps error");
 
                     let sym = caps[1].to_string();
-                    let x = caps[2].parse::<f64>().expect("f64 parse error") / BOHR;
-                    let y = caps[3].parse::<f64>().expect("f64 parse error") / BOHR;
-                    let z = caps[4].parse::<f64>().expect("f64 parse error") / BOHR;
+                    let x = caps[2].parse::<f64>().expect("f64 parse error") * BOHR;
+                    let y = caps[3].parse::<f64>().expect("f64 parse error") * BOHR;
+                    let z = caps[4].parse::<f64>().expect("f64 parse error") * BOHR;
                     atms.push(sym2atm(&sym));
                     xyzs.push([x, y, z]);
                     loc = l;
                 } else {
                     if atms.len() != 0 && xyzs.len() != 0 {
                         let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-                        let atoms = Atoms::new(&atms, &xyzs, &crgs, None);
+                        let atoms = Atoms::new(&atms, &xyzs, &crgs);
                         geomes.push(atoms);
                     }
                     atms.clear();
@@ -47,7 +47,7 @@ impl XyzReader {
             }
             if loc == self.lines.len() - 1 {
                 let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-                let atoms = Atoms::new(&atms, &xyzs, &crgs, None);
+                let atoms = Atoms::new(&atms, &xyzs, &crgs);
                 geomes.push(atoms);
             }
             geomes
@@ -63,10 +63,10 @@ impl Reader for XyzReader {
         assert!(count > 0, "没有找到几何结构");
         geomes[count - 1].clone()
     }
-    fn get_basis(&self) -> Basis {
-        Basis::blank()
+    fn get_basis(&self) -> Option<Basis> {
+        None
     }
-    fn get_coefs(&self) -> Coefs {
-        Coefs::blank()
+    fn get_coefs(&self) -> Option<Coefs> {
+        None
     }
 }

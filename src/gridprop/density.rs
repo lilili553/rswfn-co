@@ -1,54 +1,53 @@
 #![allow(non_snake_case)]
 use std::sync::OnceLock;
 
-use ndarray::Array2;
-use ndarray_linalg::{EigValsh};
 use crate::base::Mole;
 use crate::datas::rdens;
+use crate::gridprop::GridVals;
 use crate::gridprop::wfnfunc;
 use crate::maths;
 use crate::moleprop;
+use ndarray::Array2;
 
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
     pub atms: &'m Vec<usize>,
-    wfn_caler:wfnfunc::Calculator<'m>,
-    mole_pi:OnceLock<Mole>,
-    mole_spin:OnceLock<(Mole,Mole)>,
-    // pub dmat_fix:Array2<f64>,
+    wfn_caler: wfnfunc::Calculator<'m>,
+    mole_pi: OnceLock<Mole>,
+    mole_spin: OnceLock<(Mole, Mole)>,
 }
 
 impl<'m> Calculator<'m> {
     pub fn new(mole: &'m Mole) -> Self {
-        let atms=mole.atoms().idxs();
+        let atms = mole.atoms().idxs();
         let mut wfn_caler = wfnfunc::Calculator::new(mole);
-        wfn_caler.atms=atms;
-        Calculator { 
-            mole:mole,
-            atms:atms,
-            wfn_caler:wfn_caler,
-            mole_pi:OnceLock::new(),
-            mole_spin:OnceLock::new(),
+        wfn_caler.atms = atms;
+        Calculator {
+            mole: mole,
+            atms: atms,
+            wfn_caler: wfn_caler,
+            mole_pi: OnceLock::new(),
+            mole_spin: OnceLock::new(),
         }
     }
 
-    pub fn mole_pi(&self)->&Mole{
-        let mole_pocv=self.mole_pi.get_or_init(||{
-            moleprop::newmole::Calculator::new(self.mole).mole_pi()
-        });
+    pub fn mole_pi(&self) -> &Mole {
+        let mole_pocv = self
+            .mole_pi
+            .get_or_init(|| moleprop::newmole::Calculator::new(self.mole).mole_pi());
         return mole_pocv;
     }
 
-    pub fn mole_spin(&self)-> &(Mole,Mole){
-        let mole_spin=self.mole_spin.get_or_init(||{
-            moleprop::newmole::Calculator::new(self.mole).mole_spin()
-        });
+    pub fn mole_spin(&self) -> &(Mole, Mole) {
+        let mole_spin = self
+            .mole_spin
+            .get_or_init(|| moleprop::newmole::Calculator::new(self.mole).mole_spin());
         mole_spin
     }
 
     // 计算一个点处的电子密度，这些只计算一个点的函数不需要使用numpy数组传参，但是如果有格点的话就需要了
     #[rustfmt::skip]
-    pub fn mol_rho_cm(&self,grid: &[f64; 3],level: usize) -> (f64, [f64;3], [[f64;3];3]) {
+    pub fn mol_rho_cm(&self,grid: &[f64; 3],level: usize) -> GridVals {
         let mut mol_rho0 = 0.0;
         let mut mol_rho1 = [0.0;3];
         let mut mol_rho2 = [[0.0;3];3];
@@ -73,7 +72,7 @@ impl<'m> Calculator<'m> {
                 mol_rho2[0][1] += 2.0 * (obt_wfn1[0] * obt_wfn1[1] + obt_wfn0 * obt_wfn2[0][1])*occ;
                 mol_rho2[0][2] += 2.0 * (obt_wfn1[0] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[0][2])*occ;
                 mol_rho2[1][2] += 2.0 * (obt_wfn1[1] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[1][2])*occ;
-                
+
             }
         }
         if level>=2{
@@ -81,14 +80,14 @@ impl<'m> Calculator<'m> {
             mol_rho2[2][0] = mol_rho2[0][2];
             mol_rho2[2][1] = mol_rho2[1][2];
         }
-        (mol_rho0, mol_rho1, mol_rho2)
+        GridVals::new(mol_rho0, mol_rho1, mol_rho2)
     }
 
     // 计算某一点处的电子密度，根据密度矩阵计算分子电子密度
     #[rustfmt::skip]
-    pub fn mol_rho_dm(&self, grid: &[f64; 3], level: usize) -> (f64, [f64; 3], [[f64; 3]; 3]) {
-        let ato_atms=self.mole.coefs().ato_atms("car");
-        let dmat_car=self.mole.coefs().get_dmat("car");
+    pub fn mol_rho_dm(&self, grid: &[f64; 3], level: usize) -> GridVals {
+        let ato_atms=self.mole.basis().atos().atms("car");
+        let dmat_car=self.mole.coefs().get_dmat("car", self.mole.basis());
         let (ato_wfn0, ato_wfn1, ato_wfn2) = self.wfn_caler.ato_wfn(&grid, level);
         let mut mol_rho0 = 0.0;
         let mut mol_rho1 = [0.0; 3];
@@ -105,10 +104,10 @@ impl<'m> Calculator<'m> {
                 if !self.atms.contains(&atmj){ // 如果不是需要计算的原子则跳过
                     continue;
                 }
-                
+
                 let d = dmat_car[(i, j)];
                 // let d=d*self.dmat_fix[(atmi as usize,atmj as usize)]; // 给密度矩阵加矫正
-                
+
                 if d==0.0 {
                     continue;
                 }
@@ -121,7 +120,7 @@ impl<'m> Calculator<'m> {
                     mol_rho1[1] += (ato_wfn0[i] * ato_wfn1[j][1] + ato_wfn0[j] * ato_wfn1[i][1]) * d*k;
                     mol_rho1[2] += (ato_wfn0[i] * ato_wfn1[j][2] + ato_wfn0[j] * ato_wfn1[i][2]) * d*k;
                 }
-                
+
 
                 // 二阶导数：dxx
                 if level>=2{
@@ -131,7 +130,7 @@ impl<'m> Calculator<'m> {
                     mol_rho2[0][1] += (ato_wfn2[i][0][1] * ato_wfn0[j]+ ato_wfn1[i][0] * ato_wfn1[j][1]+ ato_wfn1[i][1] * ato_wfn1[j][0]+ ato_wfn0[i] * ato_wfn2[j][0][1])* d*k;
                     mol_rho2[0][2] += (ato_wfn2[i][0][2] * ato_wfn0[j]+ ato_wfn1[i][0] * ato_wfn1[j][2]+ ato_wfn1[i][2] * ato_wfn1[j][0]+ ato_wfn0[i] * ato_wfn2[j][0][2])* d*k;
                     mol_rho2[1][2] += (ato_wfn2[i][1][2] * ato_wfn0[j]+ ato_wfn1[i][1] * ato_wfn1[j][2]+ ato_wfn1[i][2] * ato_wfn1[j][1]+ ato_wfn0[i] * ato_wfn2[j][1][2])* d*k;
-                }    
+                }
             }
         }
         if level>=2{
@@ -139,50 +138,43 @@ impl<'m> Calculator<'m> {
             mol_rho2[2][0] = mol_rho2[0][2];
             mol_rho2[2][1] = mol_rho2[1][2];
         }
-        (mol_rho0, mol_rho1, mol_rho2)
+        GridVals::new(mol_rho0, mol_rho1, mol_rho2)
     }
 
     // 计算自旋电子密度
-    pub fn mol_rho_spin(&self,grid: &[f64; 3])-> [f64;2]{
+    pub fn mol_rho_spin(&self, grid: &[f64; 3], level: usize) -> [GridVals; 2] {
         let (mole_a, mole_b) = self.mole_spin();
-        let mut cal_a=Calculator::new(mole_a);
-        let mut cal_b=Calculator::new(mole_b);
-        cal_a.atms=self.atms;
-        cal_b.atms=self.atms;
-        let rho_a=cal_a.mol_rho_dm(grid, 0).0;
-        let rho_b=cal_b.mol_rho_dm(grid, 0).0;
-        [rho_a, rho_b]
+        let mut cal_a = Calculator::new(mole_a);
+        let mut cal_b = Calculator::new(mole_b);
+        cal_a.atms = self.atms;
+        cal_b.atms = self.atms;
+        let val_a = cal_a.mol_rho_dm(grid, level);
+        let val_b = cal_b.mol_rho_dm(grid, level);
+        [val_a, val_b]
     }
 
     // 计算所有原子轨道的电子密度
-    pub fn ato_rho(
-        &self,
-        grid: &[f64; 3],
-        level: usize,
-    ) -> (Vec<f64>, Vec<[f64; 3]>, Vec<[[f64; 3]; 3]>) {
-        let pmat_car = self.mole.coefs().get_dmat("car");
+    pub fn ato_rho(&self, grid: &[f64; 3], level: usize) -> Vec<GridVals> {
+        let pmat_car = self.mole.coefs().get_dmat("car", self.mole.basis());
         let nato = pmat_car.shape()[0];
         let (ato_wfn0, ato_wfn1, ato_wfn2) = self.wfn_caler.ato_wfn(grid, level);
-        let mut ato_rho0 = vec![0.0; nato];
-        let mut ato_rho1 = vec![[0.0; 3]; nato];
-        let mut ato_rho2 = vec![[[0.0; 3]; 3]; nato];
+        let mut ato_rhos = vec![GridVals::non(); nato];
         for i in 0..nato {
             for j in 0..nato {
                 if pmat_car[(i, j)] == 0.0 {
                     continue;
                 };
-                ato_rho0[i] += ato_wfn0[i] * ato_wfn0[j] * pmat_car[(i, j)];
+                ato_rhos[i].val0 += ato_wfn0[i] * ato_wfn0[j] * pmat_car[(i, j)];
                 if level >= 1 {
                     for k in 0..3 {
-                        ato_rho1[i][k] += (ato_wfn0[i] * ato_wfn1[j][k]
-                            + ato_wfn0[j] * ato_wfn1[i][k])
-                            * pmat_car[(i, j)];
+                        ato_rhos[i].val1[k] +=
+                            (ato_wfn0[i] * ato_wfn1[j][k] + ato_wfn0[j] * ato_wfn1[i][k]) * pmat_car[(i, j)];
                     }
                 }
                 if level >= 2 {
                     for k in 0..3 {
                         for l in 0..3 {
-                            ato_rho2[i][k][l] += (ato_wfn2[i][k][l] * ato_wfn0[j]
+                            ato_rhos[i].val2[k][l] += (ato_wfn2[i][k][l] * ato_wfn0[j]
                                 + ato_wfn1[i][k] * ato_wfn1[j][l]
                                 + ato_wfn1[i][l] * ato_wfn1[j][k]
                                 + ato_wfn0[i] * ato_wfn2[j][k][l])
@@ -192,307 +184,337 @@ impl<'m> Calculator<'m> {
                 }
             }
         }
-        (ato_rho0, ato_rho1, ato_rho2)
+        ato_rhos
     }
 
     // 计算预电子密度
-    pub fn pro_rho(&self,grid:&[f64;3])->f64{
-        let natm=self.mole.atoms().len();
-        let mut pro_rho=0.0;
-        for i in 0..natm{
-            let atom=self.mole.atoms().get(i as usize);
-            let xyz=atom.xyz;
-            let dist=maths::calc_dist(&xyz, &grid);
-            pro_rho+=rdens::get_radDens_v1(atom.nuc, dist);
+    pub fn pro_rho(&self, grid: &[f64; 3]) -> f64 {
+        let natm = self.mole.atoms().len();
+        let mut pro_rho = 0.0;
+        for i in 0..natm {
+            let atom = self.mole.atoms().get(i as usize);
+            let xyz = atom.xyz;
+            let dist = maths::calc_dist(&xyz, &grid);
+            pro_rho += rdens::get_rad_dens_v1(atom.nuc, dist);
         }
         pro_rho
     }
 
     // 计算轨道电子密度
-    pub fn obt_rho(&self,grid: &[f64; 3],obt:usize,level: usize) -> (f64, [f64;3], [[f64;3];3]) {
+    pub fn obt_rho(&self, grid: &[f64; 3], obt: usize, level: usize) -> GridVals {
         let mut obt_rho0 = 0.0;
-        let mut obt_rho1 = [0.0;3];
-        let mut obt_rho2 = [[0.0;3];3];
-        let occ=self.mole.coefs().obt_occs[obt as usize];
+        let mut obt_rho1 = [0.0; 3];
+        let mut obt_rho2 = [[0.0; 3]; 3];
+        let occ = self.mole.coefs().obt_occs[obt as usize];
         // 循环所有的分子轨道
         // 先构建该分子轨道的波函数
+        let (obt_wfn0, obt_wfn1, obt_wfn2) = self.wfn_caler.obt_wfn(obt, grid, level);
+        obt_rho0 += obt_wfn0.powf(2.0) * (occ as f64);
 
-        let (obt_wfn0,obt_wfn1,obt_wfn2)=self.wfn_caler.obt_wfn(obt, grid,level);
-        obt_rho0 += obt_wfn0.powf(2.0)*(occ as f64);
-        
         if level >= 1 {
-            obt_rho1[0] = 2.0 * obt_wfn0 * obt_wfn1[0]*(occ as f64);
-            obt_rho1[1] = 2.0 * obt_wfn0 * obt_wfn1[1]*(occ as f64);
-            obt_rho1[2] = 2.0 * obt_wfn0 * obt_wfn1[2]*(occ as f64);
+            obt_rho1[0] = 2.0 * obt_wfn0 * obt_wfn1[0] * (occ as f64);
+            obt_rho1[1] = 2.0 * obt_wfn0 * obt_wfn1[1] * (occ as f64);
+            obt_rho1[2] = 2.0 * obt_wfn0 * obt_wfn1[2] * (occ as f64);
         }
         if level >= 2 {
-            obt_rho2[0][0] = 2.0 * (obt_wfn1[0] * obt_wfn1[0] + obt_wfn0 * obt_wfn2[0][0])*(occ as f64);
-            obt_rho2[1][1] = 2.0 * (obt_wfn1[1] * obt_wfn1[1] + obt_wfn0 * obt_wfn2[1][1])*(occ as f64);
-            obt_rho2[2][2] = 2.0 * (obt_wfn1[2] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[2][2])*(occ as f64);
-            obt_rho2[0][1] = 2.0 * (obt_wfn1[0] * obt_wfn1[1] + obt_wfn0 * obt_wfn2[0][1])*(occ as f64);
-            obt_rho2[0][2] = 2.0 * (obt_wfn1[0] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[0][2])*(occ as f64);
-            obt_rho2[1][2] = 2.0 * (obt_wfn1[1] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[1][2])*(occ as f64);
+            obt_rho2[0][0] = 2.0 * (obt_wfn1[0] * obt_wfn1[0] + obt_wfn0 * obt_wfn2[0][0]) * (occ as f64);
+            obt_rho2[1][1] = 2.0 * (obt_wfn1[1] * obt_wfn1[1] + obt_wfn0 * obt_wfn2[1][1]) * (occ as f64);
+            obt_rho2[2][2] = 2.0 * (obt_wfn1[2] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[2][2]) * (occ as f64);
+            obt_rho2[0][1] = 2.0 * (obt_wfn1[0] * obt_wfn1[1] + obt_wfn0 * obt_wfn2[0][1]) * (occ as f64);
+            obt_rho2[0][2] = 2.0 * (obt_wfn1[0] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[0][2]) * (occ as f64);
+            obt_rho2[1][2] = 2.0 * (obt_wfn1[1] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[1][2]) * (occ as f64);
             obt_rho2[1][0] = obt_rho2[0][1];
             obt_rho2[2][0] = obt_rho2[0][2];
             obt_rho2[2][1] = obt_rho2[1][2];
         }
-        (obt_rho0, obt_rho1, obt_rho2)
+        GridVals::new(obt_rho0, obt_rho1, obt_rho2)
     }
 
     // Reduced Density Gradient
-    pub fn RDG(&self,grid:&[f64;3])->f64{
-        let RDG_maxrho=0.05;
-        let (rho0,rho1,_rho2)=self.mol_rho_dm(grid, 1);
-        let rho=rho0.max(1e-6);
-        let [gx,gy,gz]=rho1;
-        let norm=(gx.powi(2)+gy.powi(2)+gz.powi(2)).sqrt();
+    pub fn RDG(&self, grid: &[f64; 3]) -> f64 {
+        let RDG_maxrho = 0.05;
+        let grid_vals = self.mol_rho_dm(grid, 1);
+        let rho = grid_vals.val0.max(1e-6);
+        let [gx, gy, gz] = grid_vals.val1;
+        let norm = (gx.powi(2) + gy.powi(2) + gz.powi(2)).sqrt();
         // let coef=1.0/(2.0*(3.0*PI.powi(2)).powf(1.0/3.0));
-        let coef=0.1616204596739955;
-        if rho>RDG_maxrho && RDG_maxrho!=0.0{
+        let coef = 0.1616204596739955;
+        if rho > RDG_maxrho && RDG_maxrho != 0.0 {
             return 100.0;
-        }else{
-            return  coef*norm/rho.powf(4.0/3.0);
+        } else {
+            return coef * norm / rho.powf(4.0 / 3.0);
         }
     }
 
-    pub fn IRI(&self,grid:&[f64;3],alp:Option<f64>)->f64{
-        let (rho0,rho1,_rho2)=self.mol_rho_dm(grid, 1);
-        let alp=alp.unwrap_or(1.1);
-        let rho=rho0.max(1e-6);
-        let [gx,gy,gz]=rho1;
-        let norm=(gx.powi(2)+gy.powi(2)+gz.powi(2)).sqrt();
-        norm/rho.powf(alp)
+    pub fn IRI(&self, grid: &[f64; 3], alp: Option<f64>) -> f64 {
+        let grid_vals = self.mol_rho_dm(grid, 1);
+        let alp = alp.unwrap_or(1.1);
+        let rho = grid_vals.val0.max(1e-6);
+        let [gx, gy, gz] = grid_vals.val1;
+        let norm = (gx.powi(2) + gy.powi(2) + gz.powi(2)).sqrt();
+        norm / rho.powf(alp)
     }
 
-    pub fn laplace(&self,grid:&[f64;3])->f64{
-        let (_rho0,_rho1,rho2)=self.mol_rho_dm(grid, 2);
-        let mut val=0.0;
-        
-        for i in 0..3{
-            val+=rho2[i][i];
+    pub fn laplace(&self, grid: &[f64; 3]) -> f64 {
+        let grid_vals = self.mol_rho_dm(grid, 2);
+        let mut val = 0.0;
+
+        for i in 0..3 {
+            val += grid_vals.val2[i][i];
         }
         val
     }
 
-    pub fn signl2rho(&self,grid:&[f64;3])->f64{
-        let (rho0,_rho1,rho2)=self.mol_rho_dm(grid, 2);
-        let hessian = Array2::from_shape_vec((3, 3), rho2.iter().cloned().flatten().collect()).expect("矩阵转换失败");
-        let eig_vals=hessian.eigvalsh(ndarray_linalg::UPLO::Lower).expect("计算本征值失败");
-        let lambda2=eig_vals[1];
-        let singl2= if lambda2<0.0 {-1.0} else if lambda2>0.0 {1.0} else {0.0};
-        singl2*rho0
+    pub fn signl2rho(&self, grid: &[f64; 3]) -> f64 {
+        let grid_vals = self.mol_rho_dm(grid, 2);
+        let hessian =
+            Array2::from_shape_vec((3, 3), grid_vals.val2.iter().cloned().flatten().collect()).expect("矩阵转换失败");
+        let eig_vals = maths::eigh(&hessian).0;
+        let lambda2 = eig_vals[1];
+        let singl2 = if lambda2 < 0.0 {
+            -1.0
+        } else if lambda2 > 0.0 {
+            1.0
+        } else {
+            0.0
+        };
+        singl2 * grid_vals.val0
     }
 
-    pub fn pi_rho(&self,grid:&[f64;3])->f64{
-        let mole_pocv=self.mole_pi();
-        let rho_caler=Calculator::new(mole_pocv);
-        rho_caler.mol_rho_dm(grid, 0).0
+    pub fn pi_rho(&self, grid: &[f64; 3], level: usize) -> GridVals {
+        let mole_pocv = self.mole_pi();
+        let rho_caler = Calculator::new(mole_pocv);
+        rho_caler.mol_rho_dm(grid, level)
     }
 
     // 变形电子密度
-    pub fn del_rho(&self,grid:&[f64;3])->f64{
-        self.pro_rho(grid)-self.mol_rho_dm(grid, 0).0
+    pub fn del_rho(&self, grid: &[f64; 3]) -> f64 {
+        self.pro_rho(grid) - self.mol_rho_dm(grid, 0).val0
     }
 
     // 福井函数
-    pub fn fukui(&self,grid:&[f64;3],moleN:&Mole,moleP:&Mole)->[f64;4]{
-        let calerN=Calculator::new(moleN); // N+1个电子的分子
-        let calerP=Calculator::new(moleP); // N-1个电子的分子
-        let rho0=self.mol_rho_dm(grid, 0).0;
-        let rhoN=calerN.mol_rho_dm(grid, 0).0;
-        let rhoP=calerP.mol_rho_dm(grid, 0).0;
-        let fN=rhoN-rho0;
-        let fP=rho0-rhoP;
-        let f0=(rhoN-rhoP)/2.0;
-        let df=fP-fN;
-        [fN,fP,f0,df]
+    pub fn fukui(&self, grid: &[f64; 3], moleN: &Mole, moleP: &Mole) -> [f64; 4] {
+        let calerN = Calculator::new(moleN); // N+1个电子的分子
+        let calerP = Calculator::new(moleP); // N-1个电子的分子
+        let rho0 = self.mol_rho_dm(grid, 0).val0;
+        let rhoN = calerN.mol_rho_dm(grid, 0).val0;
+        let rhoP = calerP.mol_rho_dm(grid, 0).val0;
+        let fN = rhoN - rho0;
+        let fP = rho0 - rhoP;
+        let f0 = (rhoN - rhoP) / 2.0;
+        let df = fP - fN;
+        [fN, fP, f0, df]
     }
 
     /// 计算一点处的拉格朗日动能密度，总量以及算个方向的分量
-    pub fn lagkin(&self,grid:&[f64;3])->[f64;4]{
-        let occs=&self.mole.coefs().obt_occs;
-        let mut vals=[0.0;4];
-        for (obt,occ) in occs.iter().enumerate() {
-            if *occ==0{continue;}
-            let [dx,dy,dz]=self.wfn_caler.obt_wfn(obt as usize,grid, 1).1;
-            let occ=*occ as f64;
-            let gx=occ*dx.powi(2);
-            let gy=occ*dy.powi(2);
-            let gz=occ*dz.powi(2);
-            vals[1]+=gx;
-            vals[2]+=gy;
-            vals[3]+=gz;
-            vals[0]+=gx+gy+gz;
+    pub fn lagkin(&self, grid: &[f64; 3]) -> [f64; 4] {
+        let occs = &self.mole.coefs().obt_occs;
+        let mut vals = [0.0; 4];
+        for (obt, occ) in occs.iter().enumerate() {
+            if *occ == 0.0 {
+                continue;
+            }
+            let [dx, dy, dz] = self.wfn_caler.obt_wfn(obt as usize, grid, 1).1;
+            let occ = *occ as f64;
+            let gx = occ * dx.powi(2);
+            let gy = occ * dy.powi(2);
+            let gz = occ * dz.powi(2);
+            vals[1] += gx;
+            vals[2] += gy;
+            vals[3] += gz;
+            vals[0] += gx + gy + gz;
         }
-        for val in vals.iter_mut(){
-            *val/=2.0;
+        for val in vals.iter_mut() {
+            *val /= 2.0;
         }
         vals
     }
 
     /// 计算一点处的哈密顿动能密度，总量以及算个方向的分量
-    pub fn hamkin(&self,grid:&[f64;3])->f64{
-        let occs=&self.mole.coefs().obt_occs;
-        let mut val=0.0;
-        for (obt,occ) in occs.iter().enumerate() {
-            if *occ==0{continue;}
-            let occ=*occ as f64;
-            let (wfn0,_,wfn2)=self.wfn_caler.obt_wfn(obt as usize,grid, 2);
-            let kx=occ*wfn0*wfn2[0][0];
-            let ky=occ*wfn0*wfn2[1][1];
-            let kz=occ*wfn0*wfn2[2][2];
-            val+=kx+ky+kz;
+    pub fn hamkin(&self, grid: &[f64; 3]) -> f64 {
+        let occs = &self.mole.coefs().obt_occs;
+        let mut val = 0.0;
+        for (obt, occ) in occs.iter().enumerate() {
+            if *occ == 0.0 {
+                continue;
+            }
+            let occ = *occ as f64;
+            let (wfn0, _, wfn2) = self.wfn_caler.obt_wfn(obt as usize, grid, 2);
+            let kx = occ * wfn0 * wfn2[0][0];
+            let ky = occ * wfn0 * wfn2[1][1];
+            let kz = occ * wfn0 * wfn2[2][2];
+            val += kx + ky + kz;
         }
-        val*-0.5
+        val * -0.5
     }
 
     /// 动能密度（kinetic energy density）
-    pub fn KED(&self,grid: &[f64; 3])->f64{
-        let open=self.mole.is_open();
-        let obts=self.mole.coefs().obt_idxs(true);
-        let mut val=0.0;
-        let occ=if open{1.0}else{2.0};
+    pub fn KED(&self, grid: &[f64; 3]) -> f64 {
+        let obts = self.mole.coefs().obt_idxs(true); // 占据分子轨道索引
+        let mut val = 0.0;
+        let occs = &self.mole.coefs().obt_occs;
         for obt in obts.iter() {
-            let (_wfn0,wfn1,_wfn2)=self.wfn_caler.obt_wfn(*obt,grid, 1);
-            let [gx,gy,gz]=wfn1;
-            val+=(gx.powi(2)+gy.powi(2)+gz.powi(2))*occ;
+            let (_wfn0, wfn1, _wfn2) = self.wfn_caler.obt_wfn(*obt, grid, 1);
+            let [gx, gy, gz] = wfn1;
+            val += (gx.powi(2) + gy.powi(2) + gz.powi(2)) * occs[*obt];
         }
         val
     }
 
     /// 电子局域化函数（Electron Localization Function）
-    pub fn ELF(&self,grid:&[f64;3])->f64{
-        let open=self.mole.is_open();
-        let Fc = 2.871234000; // Thomas-Fermi constant = (3/10)*(3*Pi^2)**(2/3) = 2.871234, 1/2.871234=0.34828
-        let Fc_pol = 4.557799872; // Fermi constant for spin polarized = (3/10)*(6*Pi^2)**(2/3) = 4.5578, 1/4.5578=0.2194
-        let mut ked=self.KED(grid)/2.0;
-        let ked0;
-        if !open{
-            let (rho0,rho1,_rho2)=self.mol_rho_dm(grid, 1);
-            ked0=Fc*rho0.powf(5.0/3.0);
-            if rho0!=0.0{
-                let pauli=(rho1[0].powi(2)+rho1[1].powi(2)+rho1[2].powi(2))/rho0/8.0; // Pauli kinetic energy density
-                ked-=pauli;
-            }
-        }else{
-            let [rho_a,rho_b]=self.mol_rho_spin(grid);
-            ked0=Fc_pol*(rho_a.powf(5.0/3.0)+rho_b.powf(5.0/3.0));
-        }
-        ked+=1e-5;
-        let elf=1.0/(1.0+(ked/ked0).powi(2));
+    pub fn ELF(&self, grid: &[f64; 3]) -> f64 {
+        let open = self.mole.is_open();
+        let fcs = [4.557799872345596, 2.871234000188191]; // Thomas-Fermi constants =  (3/10)*(6*Pi^2)**(2/3) (3/10)*(3*Pi^2)**(2/3)
+        let mut ked = self.KED(grid) / 2.0;
+        let alp = 1.6666666666666; // 5/3
+        let (Dr, D0) = if open {
+            let [rhos_a, rhos_b] = self.mol_rho_spin(grid, 1);
+            let Dr = ked - (rhos_a.grad_norm2() / rhos_a.val0 + rhos_b.grad_norm2() / rhos_b.val0) / 8.0;
+            let D0 = fcs[0] * (rhos_a.val0.powf(alp) + rhos_b.val0.powf(alp));
+            (Dr, D0)
+        } else {
+            let rhos = self.mol_rho_dm(grid, 1);
+            let Dr = ked - rhos.grad_norm2() / rhos.val0 / 8.0;
+            let D0 = fcs[1] * rhos.val0.powf(alp);
+            (Dr, D0)
+        };
+        ked += 1e-5;
+        let elf = 1.0 / (1.0 + (Dr / D0).powi(2));
         elf
     }
 
     ///  Localized orbital locator (LOL)
-    pub fn LOL(&self,grid: &[f64; 3])->f64{
-        let Fc = 2.871234000; // Thomas-Fermi constant = (3/10)*(3*Pi^2)**(2/3) = 2.871234, 1/2.871234=0.34828
-        let Fc_pol = 4.557799872; // Fermi constant for spin polarized = (3/10)*(6*Pi^2)**(2/3) = 4.5578, 1/4.5578=0.2194
-
-        let open=self.mole.is_open();
-        let ked=self.KED(grid)/2.0;
-        let ked0;
-        if !open{
-            let rho0=self.mol_rho_dm(grid, 0).0;
-            ked0=Fc*rho0.powf(5.0/3.0);
-        }else{
-            let [rho_a,rho_b]=self.mol_rho_spin(grid);
-            ked0=Fc_pol*(rho_a.powf(5.0/3.0)+rho_b.powf(5.0/3.0));
-        }
-        let lol=1.0/(1.0+(ked/ked0));
+    pub fn LOL(&self, grid: &[f64; 3]) -> f64 {
+        let fcs = [4.557799872345596, 2.871234000188191]; // Thomas-Fermi constants =  (3/10)*(6*Pi^2)**(2/3) (3/10)*(3*Pi^2)**(2/3)
+        let alp = 1.6666666666666; // 5/3
+        let ked = self.KED(grid) / 2.0;
+        let open = self.mole.is_open();
+        let D0 = if open {
+            let [rhos_a, rhos_b] = self.mol_rho_spin(grid, 1);
+            fcs[0] * (rhos_a.val0.powf(alp) + rhos_b.val0.powf(alp))
+        } else {
+            let rhos = self.mol_rho_dm(grid, 1);
+            fcs[1] * rhos.val0.powf(alp)
+        };
+        let tau = D0 / ked;
+        let lol = tau / (1.0 + tau);
         lol
     }
 
-    pub fn infoentro(&self,grid:&[f64;3])->f64{
-        let rho0=self.mol_rho_dm(grid, 0).0;
-        let ncrg=self.mole.ncrg() as f64;
-        let rho=rho0/ncrg;
-        if rho<1e-100{
-            0.0
-        }else{
-            -rho*f64::ln(rho)
-        }
+    pub fn infoentro(&self, grid: &[f64; 3]) -> f64 {
+        let rho0 = self.mol_rho_dm(grid, 0).val0;
+        let ncrg = self.mole.ncrg() as f64;
+        let rho = rho0 / ncrg;
+        if rho < 1e-100 { 0.0 } else { -rho * f64::ln(rho) }
     }
 
-    pub fn activate(&self,grid:&[f64;3])->f64{
-        let rho=self.mol_rho_dm(grid, 0).0;
-        rho*f64::exp(-1.0*(rho-0.4))
+    pub fn activate(&self, grid: &[f64; 3]) -> f64 {
+        let rho = self.mol_rho_dm(grid, 0).val0;
+        rho * f64::exp(-1.0 * (rho - 0.4))
     }
 
-    pub fn curvature(&self,grid: &[f64; 3])->f64{ // 计算电子密度的曲率
-        let (_,rho1,rho2)=self.mol_rho_dm(grid, 2);
-        let [dx,dy,dz]=rho1;
-        let f=Array2::from_shape_vec((1,3), vec![dx,dy,dz]).expect("矩阵生成失败");
-        let norm2=(dx.powi(2)+dy.powi(2)+dz.powi(2)).powf(0.50000000); // 梯度模长
-        let norm3=(dx.powi(3)+dy.powi(3)+dz.powi(3)).powf(0.33333333); // 梯度模长
-        let xx=rho2[0][0];
-        let yy=rho2[1][1];
-        let zz=rho2[2][2];
-        let tr=xx+yy+zz; // Hessian矩阵的迹
-        let h=Array2::from_shape_vec((3,3), rho2.iter().cloned().flatten().collect()).expect("矩阵生成失败");
-        let ft=f.t();
-        let mul=f.dot(&h).dot(&ft)[(0,0)];
-        (norm2*tr-mul)/norm3
+    pub fn curvature(&self, grid: &[f64; 3]) -> f64 {
+        // 计算电子密度的曲率
+        let rhos = self.mol_rho_dm(grid, 2);
+        let [dx, dy, dz] = rhos.val1;
+        let f = Array2::from_shape_vec((1, 3), vec![dx, dy, dz]).expect("矩阵生成失败");
+        let norm2 = (dx.powi(2) + dy.powi(2) + dz.powi(2)).powf(0.50000000); // 梯度模长
+        let norm3 = (dx.powi(3) + dy.powi(3) + dz.powi(3)).powf(0.33333333); // 梯度模长
+        let xx = rhos.val2[0][0];
+        let yy = rhos.val2[1][1];
+        let zz = rhos.val2[2][2];
+        let tr = xx + yy + zz; // Hessian矩阵的迹
+        let h = Array2::from_shape_vec((3, 3), rhos.val2.iter().cloned().flatten().collect()).expect("矩阵生成失败");
+        let ft = f.t();
+        let mul = f.dot(&h).dot(&ft)[(0, 0)];
+        (norm2 * tr - mul) / norm3
     }
 }
 
-
 pub fn mol_rho_dm(
-    ato_atms:&Vec<usize>,
-    dmat_car:&Array2<f64>,
-    ato_wfn0:&Vec<f64>,
-    ato_wfn1:&Vec<[f64; 3]>,
-    ato_wfn2:&Vec<[[f64; 3]; 3]>,
-    atms:&Vec<usize>,
-    level: usize
+    ato_atms: &Vec<usize>,
+    dmat_car: &Array2<f64>,
+    ato_wfn0: &Vec<f64>,
+    ato_wfn1: &Vec<[f64; 3]>,
+    ato_wfn2: &Vec<[[f64; 3]; 3]>,
+    atms: &Vec<usize>,
+    level: usize,
 ) -> (f64, [f64; 3], [[f64; 3]; 3]) {
-        let mut mol_rho0 = 0.0;
-        let mut mol_rho1 = [0.0; 3];
-        let mut mol_rho2 = [[0.0; 3]; 3];
-        let nmat = ato_wfn0.len();
+    let mut mol_rho0 = 0.0;
+    let mut mol_rho1 = [0.0; 3];
+    let mut mol_rho2 = [[0.0; 3]; 3];
+    let nmat = ato_wfn0.len();
 
-        for i in 0..nmat {
-            let atmi= ato_atms[i];
-            if !atms.contains(&atmi){
+    for i in 0..nmat {
+        let atmi = ato_atms[i];
+        if !atms.contains(&atmi) {
+            continue;
+        }
+        for j in i..nmat {
+            let atmj = ato_atms[j];
+            if !atms.contains(&atmj) {
+                // 如果不是需要计算的原子则跳过
                 continue;
             }
-            for j in i..nmat {
-                let atmj= ato_atms[j];
-                if !atms.contains(&atmj){ // 如果不是需要计算的原子则跳过
-                    continue;
-                }
-                
-                let d = dmat_car[(i, j)];
-                // let d=d*self.dmat_fix[(atmi as usize,atmj as usize)]; // 给密度矩阵加矫正
-                
-                if d==0.0 {
-                    continue;
-                }
-                let k= if i==j {1.0} else {2.0};
-                mol_rho0 += ato_wfn0[i] * ato_wfn0[j] * d*k;
 
-                // 一阶导数：dx
-                if level>=1{
-                    mol_rho1[0] += (ato_wfn0[i] * ato_wfn1[j][0] + ato_wfn0[j] * ato_wfn1[i][0]) * d*k;
-                    mol_rho1[1] += (ato_wfn0[i] * ato_wfn1[j][1] + ato_wfn0[j] * ato_wfn1[i][1]) * d*k;
-                    mol_rho1[2] += (ato_wfn0[i] * ato_wfn1[j][2] + ato_wfn0[j] * ato_wfn1[i][2]) * d*k;
-                }
-                
+            let d = dmat_car[(i, j)];
+            // let d=d*self.dmat_fix[(atmi as usize,atmj as usize)]; // 给密度矩阵加矫正
 
-                // 二阶导数：dxx
-                if level>=2{
-                    mol_rho2[0][0] += (ato_wfn2[i][0][0] * ato_wfn0[j]+ 2.0 * ato_wfn1[i][0] * ato_wfn1[j][0]+ ato_wfn0[i] * ato_wfn2[j][0][0])* d*k;
-                    mol_rho2[1][1] += (ato_wfn2[i][1][1] * ato_wfn0[j]+ 2.0 * ato_wfn1[i][1] * ato_wfn1[j][1]+ ato_wfn0[i] * ato_wfn2[j][1][1])* d*k;
-                    mol_rho2[2][2] += (ato_wfn2[i][2][2] * ato_wfn0[j]+ 2.0 * ato_wfn1[i][2] * ato_wfn1[j][2]+ ato_wfn0[i] * ato_wfn2[j][2][2])* d*k;
-                    mol_rho2[0][1] += (ato_wfn2[i][0][1] * ato_wfn0[j]+ ato_wfn1[i][0] * ato_wfn1[j][1]+ ato_wfn1[i][1] * ato_wfn1[j][0]+ ato_wfn0[i] * ato_wfn2[j][0][1])* d*k;
-                    mol_rho2[0][2] += (ato_wfn2[i][0][2] * ato_wfn0[j]+ ato_wfn1[i][0] * ato_wfn1[j][2]+ ato_wfn1[i][2] * ato_wfn1[j][0]+ ato_wfn0[i] * ato_wfn2[j][0][2])* d*k;
-                    mol_rho2[1][2] += (ato_wfn2[i][1][2] * ato_wfn0[j]+ ato_wfn1[i][1] * ato_wfn1[j][2]+ ato_wfn1[i][2] * ato_wfn1[j][1]+ ato_wfn0[i] * ato_wfn2[j][1][2])* d*k;
-                }    
+            if d == 0.0 {
+                continue;
+            }
+            let k = if i == j { 1.0 } else { 2.0 };
+            mol_rho0 += ato_wfn0[i] * ato_wfn0[j] * d * k;
+
+            // 一阶导数：dx
+            if level >= 1 {
+                mol_rho1[0] += (ato_wfn0[i] * ato_wfn1[j][0] + ato_wfn0[j] * ato_wfn1[i][0]) * d * k;
+                mol_rho1[1] += (ato_wfn0[i] * ato_wfn1[j][1] + ato_wfn0[j] * ato_wfn1[i][1]) * d * k;
+                mol_rho1[2] += (ato_wfn0[i] * ato_wfn1[j][2] + ato_wfn0[j] * ato_wfn1[i][2]) * d * k;
+            }
+
+            // 二阶导数：dxx
+            if level >= 2 {
+                mol_rho2[0][0] += (ato_wfn2[i][0][0] * ato_wfn0[j]
+                    + 2.0 * ato_wfn1[i][0] * ato_wfn1[j][0]
+                    + ato_wfn0[i] * ato_wfn2[j][0][0])
+                    * d
+                    * k;
+                mol_rho2[1][1] += (ato_wfn2[i][1][1] * ato_wfn0[j]
+                    + 2.0 * ato_wfn1[i][1] * ato_wfn1[j][1]
+                    + ato_wfn0[i] * ato_wfn2[j][1][1])
+                    * d
+                    * k;
+                mol_rho2[2][2] += (ato_wfn2[i][2][2] * ato_wfn0[j]
+                    + 2.0 * ato_wfn1[i][2] * ato_wfn1[j][2]
+                    + ato_wfn0[i] * ato_wfn2[j][2][2])
+                    * d
+                    * k;
+                mol_rho2[0][1] += (ato_wfn2[i][0][1] * ato_wfn0[j]
+                    + ato_wfn1[i][0] * ato_wfn1[j][1]
+                    + ato_wfn1[i][1] * ato_wfn1[j][0]
+                    + ato_wfn0[i] * ato_wfn2[j][0][1])
+                    * d
+                    * k;
+                mol_rho2[0][2] += (ato_wfn2[i][0][2] * ato_wfn0[j]
+                    + ato_wfn1[i][0] * ato_wfn1[j][2]
+                    + ato_wfn1[i][2] * ato_wfn1[j][0]
+                    + ato_wfn0[i] * ato_wfn2[j][0][2])
+                    * d
+                    * k;
+                mol_rho2[1][2] += (ato_wfn2[i][1][2] * ato_wfn0[j]
+                    + ato_wfn1[i][1] * ato_wfn1[j][2]
+                    + ato_wfn1[i][2] * ato_wfn1[j][1]
+                    + ato_wfn0[i] * ato_wfn2[j][1][2])
+                    * d
+                    * k;
             }
         }
-        if level>=2{
-            mol_rho2[1][0] = mol_rho2[0][1];
-            mol_rho2[2][0] = mol_rho2[0][2];
-            mol_rho2[2][1] = mol_rho2[1][2];
-        }
-        (mol_rho0, mol_rho1, mol_rho2)
     }
+    if level >= 2 {
+        mol_rho2[1][0] = mol_rho2[0][1];
+        mol_rho2[2][0] = mol_rho2[0][2];
+        mol_rho2[2][1] = mol_rho2[1][2];
+    }
+    (mol_rho0, mol_rho1, mol_rho2)
+}

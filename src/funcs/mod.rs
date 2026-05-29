@@ -1,20 +1,23 @@
+#[cfg(feature = "use-func")]
 mod bind_funcs;
+#[cfg(feature = "use-func")]
 mod bind_xc;
+
 pub mod cxcs;
 pub mod rxcs;
 use std::mem::MaybeUninit;
 
-#[cfg(feature = "use-c")]
+#[cfg(feature = "use-func")]
 pub struct RsFun {
     pub xc_func: MaybeUninit<bind_xc::xc_func_type>,
     pub xc_family: u32,
 }
 
-#[cfg(feature = "ban-c")]
+#[cfg(not(feature = "use-func"))]
 pub struct RsFun {}
 
 impl RsFun {
-    #[cfg(feature = "use-c")]
+    #[cfg(feature = "use-func")]
     pub fn new() -> Self {
         let xc_func = cxcs::init_func(false);
         let xc_family = cxcs::get_family(xc_func);
@@ -22,12 +25,12 @@ impl RsFun {
         Self { xc_func, xc_family }
     }
 
-    #[cfg(feature = "ban-c")]
+    #[cfg(not(feature = "use-func"))]
     pub fn new() -> Self {
         Self {}
     }
 
-    #[cfg(feature = "use-c")]
+    #[cfg(feature = "use-func")]
     pub fn run(&self, rho: &Vec<f64>, sigma: &Vec<f64>) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
         let p = self.xc_func.as_ptr();
         let np = rho.len();
@@ -51,7 +54,7 @@ impl RsFun {
         (zk, vrho, vsigma)
     }
 
-    #[cfg(feature = "ban-c")]
+    #[cfg(not(feature = "use-func"))]
     pub fn run(&self, rho: &Vec<f64>, sigma: &Vec<f64>) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
         let np = rho.len();
         let zk = vec![0.0; np];

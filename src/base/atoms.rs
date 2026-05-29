@@ -1,7 +1,7 @@
 use core::fmt;
 use ndarray::Array2;
-use ndarray_linalg::Inverse;
 use std::collections::HashMap;
+use std::f64::consts::PI;
 use std::sync::{Mutex, OnceLock};
 
 use crate::base::{Mole, Vec3};
@@ -22,7 +22,7 @@ pub struct Stm {
 impl Stm {
     pub fn check(&self) -> bool {
         let mat_t = self.mat.t().to_owned();
-        let mat_i = self.mat.inv().unwrap();
+        let mat_i = maths::inv(&self.mat);
         let same = utils::same_matrix(&mat_i, &mat_t);
         same
     }
@@ -59,7 +59,13 @@ impl Stm {
         let ex = es[0];
         let ey = es[1];
         let ez = es[2];
-        Self { ex, ey, ez, mat, non: false }
+        Self {
+            ex,
+            ey,
+            ez,
+            mat,
+            non: false,
+        }
     }
 
     /// 局部坐标系B在局部坐标系A中的朝向
@@ -104,7 +110,7 @@ pub struct Atom {
     pub xyz: [f64; 3], // 原子坐标
     pub rad: f64,      // 原子半径
     pub sym: String,   // 原子符号
-    pub stm: Stm,
+    pub stm: Option<Stm>,
 }
 
 impl Atom {
@@ -115,17 +121,25 @@ impl Atom {
 }
 
 impl Atom {
-    pub fn new(nuc: usize, xyz: [f64; 3], idx: usize, crg: f64, stm: Stm) -> Self {
+    pub fn new(nuc: usize, xyz: [f64; 3], idx: usize, crg: f64) -> Self {
         let mut rad = 0.0;
-        let mut sym = "H".to_string();
+        let mut sym = None;
         for elem in datas::elems::ELEMS.iter() {
-            if nuc == elem.atm {
+            if nuc == elem.idx {
                 rad = elems::atm2rad(nuc);
-                sym = elem.sym.clone();
+                sym = Some(elem.sym.clone());
                 break;
             }
         }
-        Self { nuc: nuc, crg: crg, xyz: xyz, idx: idx, rad: rad, sym: sym, stm: stm }
+        Self {
+            nuc: nuc,
+            crg: crg,
+            xyz: xyz,
+            idx: idx,
+            rad: rad,
+            sym: sym.unwrap(),
+            stm: None,
+        }
     }
 
     pub fn irow(&self) -> usize {
@@ -136,9 +150,11 @@ impl Atom {
 #[derive(Debug)]
 pub struct Atoms {
     pub atoms: Vec<Atom>,
+    pub dists: Array2<f64>,                  // 距离矩阵
+    pub bonds: Array2<usize>,                // 键矩阵，两个原子之间是否成键 0 表示不成键，1 表示成键
     pub neles: [usize; 2],                   // α电子数和β电子数
-    angs: Mutex<HashMap<[usize; 3], f64>>,   // 键角
     nebs: Mutex<HashMap<usize, Vec<usize>>>, // 每个原子的相邻原子
+    angs: Mutex<HashMap<[usize; 3], f64>>,   // 键角
     vecs: Mutex<HashMap<[usize; 2], Vec3>>,
     is_lines: Mutex<HashMap<usize, bool>>,
     is_bonds: Mutex<HashMap<[usize; 2], bool>>,
@@ -146,11 +162,11 @@ pub struct Atoms {
     crgs: OnceLock<Vec<f64>>,
     idxs: OnceLock<Vec<usize>>,
     xyzs: OnceLock<Vec<[f64; 3]>>,
-    stms: OnceLock<Vec<Stm>>,
+    stms: OnceLock<Vec<Option<Stm>>>,
 }
 
 impl Atoms {
-    pub fn new(atms: &Vec<usize>, xyzs: &Vec<[f64; 3]>, crgs: &Vec<f64>, stms: Option<&Vec<Stm>>) -> Self {
+    pub fn new(atms: &Vec<usize>, xyzs: &Vec<[f64; 3]>, crgs: &Vec<f64>) -> Self {
         let natm = atms.len();
         let mut atoms = Vec::with_capacity(natm);
         let mut nele = 0;
@@ -159,22 +175,33 @@ impl Atoms {
             let xyz = xyzs[i];
             let idx = i;
             let crg = crgs[i];
-            let stm = match stms {
-                Some(stms) => stms[i].clone(),
-                None => Stm::blank(),
-            };
-            let atom = Atom::new(nuc, xyz, idx, crg, stm);
+            let atom = Atom::new(nuc, xyz, idx, crg);
             atoms.push(atom);
             nele += nuc;
         }
         let nela = nele / 2 + nele % 2;
         let nelb = nele / 2;
         let neles = [nela, nelb];
+        let mut dists = Array2::zeros((natm, natm));
+        let mut bonds = Array2::zeros((natm, natm));
+        for i in 0..natm - 1 {
+            for j in i + 1..natm {
+                let dist = maths::calc_dist(&xyzs[i], &xyzs[j]);
+                dists[(i, j)] = dist;
+                dists[(j, i)] = dist;
+                if dist < (atoms[i].rad + atoms[j].rad) * 1.1 {
+                    bonds[(i, j)] = 1;
+                    bonds[(j, i)] = 1;
+                }
+            }
+        }
         Atoms {
             atoms: atoms,
+            dists: dists,
+            bonds: bonds,
             neles: neles,
-            angs: Mutex::new(HashMap::new()),
             nebs: Mutex::new(HashMap::new()),
+            angs: Mutex::new(HashMap::new()),
             vecs: Mutex::new(HashMap::new()),
             is_lines: Mutex::new(HashMap::new()),
             is_bonds: Mutex::new(HashMap::new()),
@@ -186,26 +213,9 @@ impl Atoms {
         }
     }
 
-    pub fn blank() -> Self {
-        Atoms {
-            atoms: Vec::new(),
-            neles: [0, 0],
-            angs: Mutex::new(HashMap::new()),
-            nebs: Mutex::new(HashMap::new()),
-            vecs: Mutex::new(HashMap::new()),
-            is_lines: Mutex::new(HashMap::new()),
-            is_bonds: Mutex::new(HashMap::new()),
-            nucs: OnceLock::new(),
-            crgs: OnceLock::new(),
-            idxs: OnceLock::new(),
-            xyzs: OnceLock::new(),
-            stms: OnceLock::new(),
-        }
-    }
-
-    pub fn add(&mut self, atm: usize, xyz: [f64; 3], crg: f64, stm: Stm) {
+    pub fn add(&mut self, atm: usize, xyz: [f64; 3], crg: f64) {
         let idx = self.atoms.len() as usize;
-        self.atoms.push(Atom::new(atm, xyz, idx, crg, stm));
+        self.atoms.push(Atom::new(atm, xyz, idx, crg));
     }
 
     pub fn get(&self, idx: usize) -> &Atom {
@@ -238,29 +248,9 @@ impl Atoms {
         dmat
     }
 
-    // 每个原子在原子轨道中占据的数量
-    pub fn ato_nums(&self, form: &str, mole: &Mole) -> Vec<usize> {
-        let ato_atms = mole.coefs().ato_atms(form); // 每个原子轨道的原子
-        let mut ato_nums = vec![0; self.atoms.len()];
-        for atm in ato_atms.iter() {
-            ato_nums[*atm as usize] += 1usize;
-        }
-        ato_nums
-    }
-
-    pub fn ato_uplo(&self, form: &str, mole: &Mole) -> Vec<[usize; 2]> {
-        let mut uplo = Vec::new();
-        let mut loc = 0usize;
-        let nums = self.ato_nums(form, mole);
-        for num in nums.iter() {
-            uplo.push([loc, loc + *num as usize]);
-            loc += *num as usize;
-        }
-        uplo
-    }
-
     pub fn xyzs(&self) -> &Vec<[f64; 3]> {
-        self.xyzs.get_or_init(|| self.atoms.iter().map(|atom| atom.xyz).collect())
+        self.xyzs
+            .get_or_init(|| self.atoms.iter().map(|atom| atom.xyz).collect())
     }
 
     pub fn xyzs_ang(&self) -> Vec<[f64; 3]> {
@@ -268,7 +258,7 @@ impl Atoms {
             .iter()
             .map(|atom| {
                 let [x, y, z] = atom.xyz;
-                [x * BOHR, y * BOHR, z * BOHR]
+                [x / BOHR, y / BOHR, z / BOHR]
             })
             .collect()
     }
@@ -291,23 +281,30 @@ impl Atoms {
 
     /// 每个原子的核电荷数
     pub fn nucs(&self) -> &Vec<usize> {
-        let nucs = self.nucs.get_or_init(|| self.atoms.iter().map(|atom| atom.nuc).collect::<Vec<usize>>());
+        let nucs = self
+            .nucs
+            .get_or_init(|| self.atoms.iter().map(|atom| atom.nuc).collect::<Vec<usize>>());
         nucs
     }
 
     // 每个原子的有效核电荷数
     pub fn crgs(&self) -> &Vec<f64> {
-        let crgs = self.crgs.get_or_init(|| self.atoms.iter().map(|atom| atom.crg).collect::<Vec<f64>>());
+        let crgs = self
+            .crgs
+            .get_or_init(|| self.atoms.iter().map(|atom| atom.crg).collect::<Vec<f64>>());
         crgs
     }
 
-    pub fn stms(&self) -> &Vec<Stm> {
-        self.stms.get_or_init(|| self.atoms.iter().map(|atom| atom.stm.clone()).collect())
+    pub fn stms(&self) -> &Vec<Option<Stm>> {
+        self.stms
+            .get_or_init(|| self.atoms.iter().map(|atom| atom.stm.clone()).collect())
     }
 
     /// 原子索引范围 (0..natm-1)
     pub fn idxs(&self) -> &Vec<usize> {
-        let idxs = self.idxs.get_or_init(|| self.atoms.iter().map(|atom| atom.idx).collect::<Vec<usize>>());
+        let idxs = self
+            .idxs
+            .get_or_init(|| self.atoms.iter().map(|atom| atom.idx).collect::<Vec<usize>>());
         idxs
     }
 
@@ -363,10 +360,10 @@ impl Atoms {
         *is_lines.entry(atm).or_insert_with(|| {
             let nebs = self.nebs(atm);
             if nebs.len() == 1 {
-                // 单独的O原子直接算线性
-                if self.syms()[atm] == "O" {
-                    return true;
-                }
+                // // 单独的O原子直接算线性
+                // if self.syms()[atm] == "O" {
+                //     return true;
+                // }
                 let neb = nebs[0];
                 if self.nebs(neb).len() == 1 {
                     return true;
@@ -375,31 +372,26 @@ impl Atoms {
                     let nebs = nebs.iter().filter(|idx| *idx != &atm).copied().collect::<Vec<usize>>();
                     let idx = nebs[0];
                     let angle = self.ang(atm, neb, idx);
-                    return (angle - 1.0).abs() < 0.01;
+                    return (angle - PI).abs() < PI / 18.0;
                 } else {
                     return false;
                 }
-            } else if nebs.len() == 2 {
+            }
+            if nebs.len() == 2 {
                 let ai = nebs[0];
                 let aj = nebs[1];
                 let vi = self.vec(atm, ai);
                 let vj = self.vec(atm, aj);
                 let angle = vi.angle(&vj);
-                (angle - 1.0).abs() < 0.04 // 5.4°
-            } else {
-                return false;
+                return (angle - PI).abs() < PI / 18.0;
             }
+            return false;
         })
     }
 
     /// 判断两个原子之间是否成键
     pub fn is_bond(&self, ai: usize, aj: usize) -> bool {
-        let mut is_bonds = self.is_bonds.lock().expect("锁定失败");
-        *is_bonds.entry([ai, aj]).or_insert_with(|| {
-            let dist = self.dist(ai, aj);
-            let rads = self.rads();
-            dist < (rads[ai] + rads[aj]) * 1.2
-        })
+        self.bonds[(ai, aj)] == 1
     }
 
     pub fn set_bonds(&self, bonds: HashMap<[usize; 2], bool>) {
@@ -459,6 +451,8 @@ impl Clone for Atoms {
     fn clone(&self) -> Self {
         Atoms {
             atoms: self.atoms.clone(),
+            dists: self.dists.clone(),
+            bonds: self.bonds.clone(),
             neles: self.neles.clone(),
             angs: Mutex::new(HashMap::new()),
             nebs: Mutex::new(HashMap::new()),
@@ -485,10 +479,13 @@ impl fmt::Display for Atoms {
         }
         for i in 0..natm {
             let atom = self.get(i);
-            if !atom.stm.non {
-                writeln!(f, "{}", atom.stm)?;
+            if !atom.stm.is_none() {
+                writeln!(f, "{}", atom.stm.as_ref().unwrap())?;
             }
         }
         Ok(())
     }
 }
+
+unsafe impl Send for Atoms {}
+unsafe impl Sync for Atoms {}

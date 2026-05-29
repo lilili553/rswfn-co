@@ -1,5 +1,6 @@
 use simplelog;
 
+#[rustfmt::skip]
 pub fn init_log() {
     let file = std::fs::File::create("rswfn日志.txt").expect("创建日志文件失败");
     simplelog::CombinedLogger::init(vec![

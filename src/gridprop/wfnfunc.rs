@@ -1,6 +1,5 @@
 use cached::proc_macro::cached;
 use ndarray::Array2;
-use ndarray_linalg::Inverse;
 
 use crate::base::{Ato, Atom, Atoms, Mole};
 use crate::datas::btrans::sym2lmn;
@@ -66,8 +65,7 @@ impl<'m> Calculator<'m> {
         grid: &[f64; 3], // 空间中任意一点的坐标
         level: usize,
     ) -> (Vec<f64>, Vec<[f64; 3]>, Vec<[[f64; 3]; 3]>) {
-        let map_ato = self.mole.basis().map_ato();
-        let atos = &map_ato.cars;
+        let atos = &self.mole.basis().atos().cars;
         let nato = atos.len();
         let mut wfn0 = vec![0.0; nato];
         let mut wfn1 = vec![[0.0; 3]; nato];
@@ -75,9 +73,9 @@ impl<'m> Calculator<'m> {
         let atoms = &self.mole.atoms;
         for i in 0..nato {
             // 对每个原子进行循环
-            let atm = &atos[i].atm;
-            if self.atms.contains(atm) {
-                let [ax, ay, az] = atoms.get(*atm).xyz;
+            let atm = atos[i].atm;
+            if self.atms.contains(&atm) {
+                let [ax, ay, az] = atoms.get(atm).xyz;
                 let px = grid[0] - ax;
                 let py = grid[1] - ay;
                 let pz = grid[2] - az;
@@ -102,7 +100,7 @@ impl<'m> Calculator<'m> {
         level: usize,
         // wfns: &(Vec<f64>, Vec<[f64; 3]>, Vec<[[f64; 3]; 3]>),
     ) -> (f64, [f64; 3], [[f64; 3]; 3]) {
-        let cmat_car = self.mole.coefs().get_cmat("car");
+        let cmat_car = self.mole.coefs().get_cmat("car", self.mole.basis());
         let nato = cmat_car.nrows(); // 原子轨道数量
         let (ato_wfn0, ato_wfn1, ato_wfn2) = self.ato_wfn(grid, level);
         let mut obt_wfn0 = 0.0;
@@ -217,31 +215,31 @@ pub fn gtf(
         let dz = (tz - 2.0 * alp * z.powi(n + 1)) * x.powi(l) * y.powi(m) * exp_v;
 
         wfn1 = [dx, dy, dz];
-        
+
         if level >= 2 {
             let txx = if l >= 2 {lf * (lf - 1.0) * x.powi(l - 2)} else {0.0};
             let tyy = if m >= 2 {mf * (mf - 1.0) * y.powi(m - 2)} else {0.0};
             let tzz = if n >= 2 {nf * (nf - 1.0) * z.powi(n - 2)} else {0.0};
-            
+
             let dxx = y.powi(m) * z.powi(n) * exp_v * (txx + 2.0 * alp * x.powi(l) * (-2.0 * lf + 2.0 * alp * x.powi(2) - 1.0));
             let dyy = x.powi(l) * z.powi(n) * exp_v * (tyy + 2.0 * alp * y.powi(m) * (-2.0 * mf + 2.0 * alp * y.powi(2) - 1.0));
             let dzz = x.powi(l) * y.powi(m) * exp_v * (tzz + 2.0 * alp * z.powi(n) * (-2.0 * nf + 2.0 * alp * z.powi(2) - 1.0));
-            
+
             let ttx = tx - 2.0 * alp * x.powi(l+1);
             let tty = ty - 2.0 * alp * y.powi(m+1);
             let ttz = tz - 2.0 * alp * z.powi(n+1);
-            
+
             let dxy = z.powi(n) * exp_v * ttx * tty;
             let dyz = x.powi(l) * exp_v * tty * ttz;
             let dxz = y.powi(m) * exp_v * ttx * ttz;
 
             wfn2 = [
-                [dxx, dxy, dxz], 
-                [dxy, dyy, dyz], 
+                [dxx, dxy, dxz],
+                [dxy, dyy, dyz],
                 [dxz, dyz, dzz]
             ];
         };
-    
+
     };
     (wfn0, wfn1, wfn2)
 }

@@ -29,9 +29,9 @@ impl GjfReader {
                 let caps = s1.captures(line).expect("捕获失败");
                 let sym = caps[1].to_string();
                 let atm = sym2atm(&sym);
-                let x = caps[2].parse::<f64>().expect("解析浮点数失败") / BOHR;
-                let y = caps[3].parse::<f64>().expect("解析浮点数失败") / BOHR;
-                let z = caps[4].parse::<f64>().expect("解析浮点数失败") / BOHR;
+                let x = caps[2].parse::<f64>().expect("解析浮点数失败") * BOHR;
+                let y = caps[3].parse::<f64>().expect("解析浮点数失败") * BOHR;
+                let z = caps[4].parse::<f64>().expect("解析浮点数失败") * BOHR;
                 atms.push(atm);
                 xyzs.push([x, y, z]);
             }
@@ -80,15 +80,15 @@ impl Reader for GjfReader {
     fn get_atoms(&self) -> Atoms {
         let (atms, xyzs) = self.read_geome();
         let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-        let mut geome = Atoms::new(&atms, &xyzs, &crgs, None);
+        let mut geome = Atoms::new(&atms, &xyzs, &crgs);
         geome.neles = self.read_neles();
         geome
     }
-    fn get_basis(&self) -> Basis {
-        Basis::blank()
+    fn get_basis(&self) -> Option<Basis> {
+        None
     }
 
-    fn get_coefs(&self) -> Coefs {
-        Coefs::blank()
+    fn get_coefs(&self) -> Option<Coefs> {
+        None
     }
 }

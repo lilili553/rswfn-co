@@ -62,11 +62,11 @@ impl<'m> Editor<'m> {
                 xyzs[*atm as usize] = points[j].clone();
             }
         }
-        let mut mole = Mole::blank();
+        let mut mole = Mole::new(self.mole.atoms.clone(), None, None);
         let atms = self.mole.atoms().nucs();
         let crgs = self.mole.atoms().crgs();
         let stms = self.mole.atoms().stms().clone();
-        let atoms = Atoms::new(atms, &xyzs, crgs, Some(&stms));
+        let atoms = Atoms::new(atms, &xyzs, crgs);
         mole.atoms = atoms;
         mole
     }
@@ -93,11 +93,11 @@ impl<'m> Editor<'m> {
                 xyzs[*atm][2] += dz * lens[i];
             }
         }
-        let mut mole = Mole::blank();
+        let mut mole = Mole::new(self.mole.atoms.clone(), None, None);
         let atms = self.mole.atoms().nucs();
         let crgs = self.mole.atoms().crgs();
         let stms = self.mole.atoms().stms().clone();
-        mole.atoms = Atoms::new(atms, &xyzs, crgs, Some(&stms));
+        mole.atoms = Atoms::new(atms, &xyzs, crgs);
         mole
     }
 }

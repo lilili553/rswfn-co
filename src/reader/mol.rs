@@ -36,14 +36,14 @@ impl Reader for MolReader {
     fn get_atoms(&self) -> Atoms {
         let (atms, xyzs) = self.read_geome();
         let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-        Atoms::new(&atms, &xyzs, &crgs, None)
+        Atoms::new(&atms, &xyzs, &crgs)
     }
 
-    fn get_basis(&self) -> Basis {
-        Basis::blank()
+    fn get_basis(&self) -> Option<Basis> {
+        None
     }
 
-    fn get_coefs(&self) -> Coefs {
-        Coefs::blank()
+    fn get_coefs(&self) -> Option<Coefs> {
+        None
     }
 }

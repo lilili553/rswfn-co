@@ -33,7 +33,7 @@ impl DmoWriter {
         for atm in 0..natm {
             let sym = &self.syms[atm];
             let [x, y, z] = self.xyzs[atm];
-            write!(&mut file, "{:>2}{:>14.8}{:>14.8}{:>14.8}\n", sym, x * BOHR, y * BOHR, z * BOHR).unwrap();
+            write!(&mut file, "{:>2}{:>14.8}{:>14.8}{:>14.8}\n", sym, x / BOHR, y / BOHR, z / BOHR).unwrap();
         }
         let atos = &self.atos;
         let nato = atos.len();
@@ -98,7 +98,7 @@ impl DmoWriter {
 }
 
 impl Writer for DmoWriter {
-    fn from_mole(&mut self, mole: &crate::base::Mole) {
+    fn read_mole(&mut self, mole: &crate::base::Mole) {
         self.syms = mole.atoms().syms().clone();
         self.xyzs = mole.atoms().xyzs().clone();
     }

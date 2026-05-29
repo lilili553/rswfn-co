@@ -3,11 +3,10 @@
 use std::collections::HashMap;
 
 use crate::base::{Coefs, Mole};
-use crate::integ::Int_mat;
+use crate::integ::RsInt;
 use crate::maths;
 use crate::{atomprop, utils};
 use ndarray::{Array1, Array2};
-use ndarray_linalg::{Eigh, UPLO};
 
 pub struct RSE<'m> {
     pub mole: &'m Mole,
@@ -30,13 +29,12 @@ impl<'m> RSE<'m> {
 
     // 实现RSE方法，忽略双电子积分，直接对角化核心哈密顿矩阵
     pub fn calc_rse(&self, lcs: bool) -> (f64, Coefs) {
-        let map_ato = self.mole.basis().map_ato();
-        let atos = &map_ato.sphs;
-        let nato = atos.len();
+        let atos = self.mole.basis().atos();
+        // let nato = atos.len();
         let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
         let atoms = self.mole.atoms();
 
-        let ints = Int_mat::new(self.mole);
+        let ints = RsInt::new(self.mole.atoms(), self.mole.basis());
         let mut stms = HashMap::new();
         let [smat, tmat, vmat] = if lcs {
             for atm in 0..atoms.len() {
@@ -55,10 +53,7 @@ impl<'m> RSE<'m> {
 
         let xmat = maths::matrix_nhalf(&smat);
         let hmat_ = xmat.dot(&hmat).dot(&xmat);
-        let (engs, cmat_) = hmat_.eigh(UPLO::Lower).unwrap_or_else(|_| {
-            utils::show_matrix(&hmat_);
-            panic!("矩阵对角化失败");
-        });
+        let (engs, cmat_) = maths::eigh(&hmat_);
         let cmat = xmat.dot(&cmat_);
         let [nela, nelb] = self.mole.atoms.neles;
         let mut eng = 0.0;
@@ -69,15 +64,15 @@ impl<'m> RSE<'m> {
         if stms.len() != 0 {
             let natm = mole_c.atoms().len();
             for i in 0..natm {
-                mole_c.atoms.atoms[i].stm = stms[&i].clone();
+                mole_c.atoms.atoms[i].stm = Some(stms[&i].clone());
             }
         }
         let nobt = cmat.ncols();
-        let ato_atms = map_ato.atms("sph");
-        let ato_shls = map_ato.shls("sph");
-        let ato_syms = map_ato.syms("sph");
+        let ato_atms = atos.atms("sph");
+        let ato_shls = atos.shls("sph");
+        let ato_syms = atos.syms("sph");
         let obt_engs = engs.to_vec();
-        let obt_occs = [vec![1; nela], vec![0; nobt - nela]].concat();
+        let obt_occs = [vec![1.0; nela], vec![0.0; nobt - nela]].concat();
         let coefs = Coefs::new(ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat);
         (eng, coefs)
     }

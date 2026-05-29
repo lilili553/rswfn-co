@@ -17,6 +17,7 @@ impl<'m> Calculator<'m> {
         Calculator { mole }
     }
 
+    // 球面格点
     pub fn sph_grids(&self, nsph: usize) -> (Vec<[f64; 3]>, Vec<f64>) {
         match nsph {
             6 => lebedev::ld0006(),

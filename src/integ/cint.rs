@@ -14,7 +14,7 @@ use std::{
     os::raw::{c_double, c_int, c_void},
     sync::OnceLock,
 };
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 unsafe extern "C" {
     fn CINTcgto_cart(bas_id: c_int, bas: *const c_int) -> c_int;
     fn cint1e_ovlp_cart(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
@@ -37,7 +37,7 @@ unsafe extern "C" {
     fn CINTgto_norm(ang: c_int, alp: c_double) -> c_double;
 }
 
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 pub struct Cint<'m> {
     pub mole: &'m Mole,
     pub atm: Vec<i32>,
@@ -48,7 +48,7 @@ pub struct Cint<'m> {
     pub fixs: [Vec<f64>; 2],
 }
 
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 impl<'m> Cint<'m> {
     pub fn new(mole: &'m Mole) -> Self {
         let natm = mole.atoms.len();
@@ -248,7 +248,7 @@ impl<'m> Cint<'m> {
     }
 }
 
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 pub fn norm_basis(atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>) -> Vec<f64> {
     let mut env_new = env.clone();
     let nbas: usize = bas.len() / 8;
@@ -270,7 +270,7 @@ pub fn norm_basis(atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>) -> Vec<f64> {
 }
 
 // 计算单电子积分
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 pub fn calc_int1e_sph(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>, cals: [usize; 3]) -> [Array2<f64>; 3] {
     let nbas = bas.len() / 8;
     let natm = atm.len() / 6;
@@ -333,7 +333,7 @@ pub fn calc_int1e_sph(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
 }
 
 // 计算单电子积分
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 pub fn calc_int1e_car(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>, cals: [usize; 3]) -> [Array2<f64>; 3] {
     let nbas = bas.len() / 8;
     let natm = atm.len() / 6;
@@ -395,7 +395,7 @@ pub fn calc_int1e_car(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
     return [smat, tmat, vmat];
 }
 
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 pub fn calc_int2e_sph(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>) -> Array4<f64> {
     let natm = atm.len() / 6; // 原子数量
     let nbas = bas.len() / 8; // 基函数数量
@@ -464,7 +464,7 @@ pub fn calc_int2e_sph(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
 }
 
 // 计算双电子积分
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 pub fn calc_int2e_car(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>) -> Array4<f64> {
     let natm = atm.len() / 6; // 原子数量
     let nbas = bas.len() / 8; // 基函数数量
@@ -531,7 +531,7 @@ pub fn calc_int2e_car(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
     return emat;
 }
 
-#[cfg(all(feature = "use-c", target_env = "gnu"))]
+#[cfg(feature = "use-cint")]
 impl<'m> fmt::Display for Cint<'m> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let env = &self.env;

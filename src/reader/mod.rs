@@ -16,6 +16,7 @@ use crate::base::Atoms;
 use crate::base::Basis;
 use crate::base::Coefs;
 use crate::base::Mole;
+use crate::datas::btrans::sym2stp;
 
 pub use cub::CubReader;
 pub use dmo::DmoReader;
@@ -50,8 +51,8 @@ impl Marks {
 
 pub trait Reader {
     fn get_atoms(&self) -> Atoms;
-    fn get_basis(&self) -> Basis;
-    fn get_coefs(&self) -> Coefs;
+    fn get_basis(&self) -> Option<Basis>;
+    fn get_coefs(&self) -> Option<Coefs>;
 }
 
 pub fn read_lines(path: &str) -> Vec<String> {
@@ -124,4 +125,53 @@ pub fn get_fileType(path: &str) -> FileType {
         return FileType::Cub;
     }
     panic!("未知文件类型:{path}");
+}
+
+use crate::datas::btrans;
+
+pub fn shl_forms(ato_atms: &Vec<usize>, ato_shls: &Vec<usize>, ato_syms: &Vec<String>) -> Vec<String> {
+    let mut shl_form = vec![];
+    let nato = ato_atms.len();
+    let mut up = 0;
+    let mut lo = 0;
+    let mut keys = vec![];
+    for i in 0..nato {
+        let atm = ato_atms[i];
+        let shl = ato_shls[i];
+        let ang = btrans::sym2ang(&ato_syms[i]);
+        let key = (atm, shl, ang);
+        if !keys.contains(&key) {
+            keys.push(key);
+            let stp = btrans::sym2stp(&ato_syms[i]);
+            let form = match stp {
+                0 | 1 => "sph",
+                2 => "car",
+                _ => panic!("未知的壳层类型"),
+            };
+            shl_form.push(form.to_owned());
+        }
+    }
+    shl_form
+}
+
+use crate::base::Shl;
+pub type BasData = (usize, usize, usize, f64, f64);
+pub fn shl_basis(datas: &Vec<BasData>, forms: &Vec<String>) -> Basis {
+    let mut keys = vec![];
+    let mut shls = Vec::new();
+    let mut ishl = 0;
+    for data in datas.iter() {
+        let (atm, shl, ang, alp, coe) = *data;
+        let key = (atm, shl, ang);
+        if !keys.contains(&key) {
+            keys.push(key);
+            let form = forms[ishl].clone();
+            shls.push(Shl { atm, shl, ang, form, alps: vec![], coes: vec![] });
+            ishl += 1;
+        }
+        let nshl = shls.len();
+        shls[nshl - 1].alps.push(alp);
+        shls[nshl - 1].coes.push(coe);
+    }
+    Basis::new(shls)
 }

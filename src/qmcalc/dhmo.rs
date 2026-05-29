@@ -3,7 +3,6 @@ use crate::base::{Mole, Vec3};
 use crate::writer::Writer;
 use crate::{maths, reader, utils, writer};
 use ndarray::{Array2, s};
-use ndarray_linalg::{Eigh, UPLO};
 // 计算一个sp2杂化的原子的有效核电荷数, 都是经验值, 目前只算C H O, 其它的直接输出核电荷, 直接不算了
 pub fn effective_charge(mole: &Mole, atm: usize) -> f64 {
     let atom = mole.atoms().get(atm);
@@ -175,7 +174,7 @@ pub struct DMO_RES {
     pub es: Vec<f64>,                                // 分子轨道的能量
 }
 
-pub fn dhmo_calc(path: String) -> (Mole, DMO_RES) {
+pub fn dhmo_calc(path: String) -> (Box<Mole>, DMO_RES) {
     // 计算原子的局部坐标系
 
     let dmi_reader = reader::DmoReader::new(&path);
@@ -226,16 +225,13 @@ pub fn dhmo_calc(path: String) -> (Mole, DMO_RES) {
             BM[(j, i)] = fa * fd * fe * 0.13906;
         }
     }
-    let (es, CM) = BM.eigh(UPLO::Lower).unwrap_or_else(|_| {
-        utils::show_matrix(&BM);
-        panic!("无法对角化键连矩阵BM");
-    });
+    let (engs, cmat) = maths::eigh(&BM);
 
-    let mut es = es.flatten().to_vec();
-    let CM = CM.slice_move(s![..,..;-1]);
-    es.reverse();
-    let res = DMO_RES { atos, BM, CM, es };
-    (mole, res)
+    let mut engs = engs.flatten().to_vec();
+    let cmat = cmat.slice_move(s![..,..;-1]);
+    engs.reverse();
+    let res = DMO_RES { atos, BM, CM: cmat, es: engs };
+    (Box::new(mole), res)
 }
 
 /// 计算并打印结果
@@ -246,7 +242,7 @@ pub fn output(dmi_path: &str, dmo_path: Option<String>) {
     };
     let (mole, dmo_res) = dhmo_calc(dmi_path.to_string());
     let mut writer = writer::DmoWriter::blank();
-    writer.from_mole(&mole);
+    writer.read_mole(&mole);
     writer.atos = dmo_res.atos.clone();
     writer.BM = dmo_res.BM.clone();
     writer.CM = dmo_res.CM.clone();

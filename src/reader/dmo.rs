@@ -1,4 +1,4 @@
-use crate::base::{Atoms, Basis, BasisData, Coefs, Stm, Vec3};
+use crate::base::{Atoms, Bas, Basis, Coefs, Shl, Stm, Vec3};
 use crate::datas::consts::BOHR;
 use crate::datas::elems::{self, sym2atm};
 use crate::maths;
@@ -56,9 +56,9 @@ impl DmoReader {
                     let caps = s1.captures(line).expect("捕获失败");
                     let sym = caps[1].to_string();
                     let atm = sym2atm(&sym);
-                    let x = caps[2].parse::<f64>().expect("解析浮点数失败") / BOHR;
-                    let y = caps[3].parse::<f64>().expect("解析浮点数失败") / BOHR;
-                    let z = caps[4].parse::<f64>().expect("解析浮点数失败") / BOHR;
+                    let x = caps[2].parse::<f64>().expect("解析浮点数失败") * BOHR;
+                    let y = caps[3].parse::<f64>().expect("解析浮点数失败") * BOHR;
+                    let z = caps[4].parse::<f64>().expect("解析浮点数失败") * BOHR;
                     atms.push(atm);
                     xyzs.push([x, y, z]);
                 } else {
@@ -80,9 +80,9 @@ impl DmoReader {
                         let atm = caps[1].parse::<usize>().expect("转换失败");
                         let shl = caps[2].parse::<usize>().expect("转换失败");
                         let sym = caps[3].to_string();
-                        let dx = caps[4].parse::<f64>().expect("解析浮点数失败") / BOHR;
-                        let dy = caps[5].parse::<f64>().expect("解析浮点数失败") / BOHR;
-                        let dz = caps[6].parse::<f64>().expect("解析浮点数失败") / BOHR;
+                        let dx = caps[4].parse::<f64>().expect("解析浮点数失败") * BOHR;
+                        let dy = caps[5].parse::<f64>().expect("解析浮点数失败") * BOHR;
+                        let dz = caps[6].parse::<f64>().expect("解析浮点数失败") * BOHR;
                         let l = maths::vec_len(&[dx, dy, dz]);
                         atos.push((atm - 1, shl, sym, [dx / l, dy / l, dz / l]));
                     } else {
@@ -156,45 +156,47 @@ impl Reader for DmoReader {
             let stm = Stm::new(ex.into_arr(), ey.into_arr(), ez.into_arr());
             stms[atos[i].0] = stm;
         }
-        Atoms::new(&atms, &xyzs, &crgs, Some(&stms))
+        Atoms::new(&atms, &xyzs, &crgs)
     }
-    fn get_basis(&self) -> Basis {
-        let mut basis = Basis::blank();
+    fn get_basis(&self) -> Option<Basis> {
         if self.path.ends_with(".dmi") {
-            return basis;
+            return None;
         }
         let (atms, _) = self.read_atms();
         let atos = self.read_atos();
         let nato = atos.len();
-        let mut datas = vec![];
+        let mut shls = vec![];
+        let mut keys = vec![];
         for i in 0..nato {
             let atm = atos[i].0;
             let shl = atos[i].1;
             let sym = &atos[i].2;
-            let nlm = sym2nlm(atms[atm], shl, sym);
-            let ang = 1;
-            let data = BasisData::new(atm, shl, ang, 1.0, 0.0, nlm);
-            datas.push(data);
+            let key = (atm, shl, sym);
+            if !keys.contains(&key) {
+                keys.push(key);
+                let nlm = sym2nlm(atms[atm], shl, sym);
+                let ang = 1;
+                let shl = Shl::new(atm, shl, ang, vec![], vec![]);
+                shls.push(shl);
+            }
         }
-
-        basis.build(datas);
-        basis.otp = "sto".to_string();
-        basis
+        let coefs = self.get_coefs();
+        Some(Basis::new(shls))
     }
 
-    fn get_coefs(&self) -> Coefs {
+    fn get_coefs(&self) -> Option<Coefs> {
         if self.path.ends_with(".dmi") {
-            return Coefs::blank();
+            return None;
         }
         let atos = self.read_atos();
         let nato = atos.len();
         if nato == 0 {
-            return Coefs::blank();
+            return None;
         }
         let (obt_engs, CM) = self.read_coefs();
         let mut obt_occs = vec![];
-        obt_occs.extend(vec![2; nato / 2]);
-        obt_occs.extend(vec![0; nato / 2]);
+        obt_occs.extend(vec![2.0; nato / 2]);
+        obt_occs.extend(vec![0.0; nato / 2]);
 
         // let ato_syms = ato_syms.clone();
         let mut atms = vec![];
@@ -211,7 +213,8 @@ impl Reader for DmoReader {
             let info = s![i * 3 + 2, ..];
             cmat.slice_mut(info).assign(&CM.slice(s![i, ..]));
         }
-        Coefs::new(atms, shls, syms, obt_engs, obt_occs, cmat)
+        let coefs = Coefs::new(atms, shls, syms, obt_engs, obt_occs, cmat);
+        Some(coefs)
     }
 }
 

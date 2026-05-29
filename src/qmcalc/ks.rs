@@ -4,11 +4,10 @@ use crate::base::Mole;
 use crate::funcs::RsFun;
 use crate::gridprop;
 use crate::gridprop::wfnfunc::ato_wfn;
-use crate::integ::{Int_mat, Mat2e};
+use crate::integ::{Mat2e, RsInt};
 use crate::maths::{self, calc_dmat};
 use crate::{funcs, utils};
 use ndarray::Array2;
-use ndarray_linalg::{Eigh, Scalar, UPLO};
 
 pub struct RKS<'m> {
     pub mole: &'m Mole,
@@ -23,7 +22,7 @@ impl<'m> RKS<'m> {
     pub fn new(mole: &'m Mole) -> Self {
         let grid_caler = gridprop::dftgrid::Calculator::new(mole);
         let (grids, weits) = grid_caler.mol_grids(100, 74);
-        let atos = &mole.basis.map_ato().cars;
+        let atos = &mole.basis().atos().cars;
         let atms = mole.atoms.idxs();
         let ngrid = grids.len();
         let atoms = &mole.atoms;
@@ -127,7 +126,7 @@ impl<'m> RKS<'m> {
     pub fn run(&self) {
         // 准备电子积分
 
-        let int_caler = Int_mat::new(self.mole);
+        let int_caler = RsInt::new(self.mole.atoms(), self.mole.basis());
         let [smat, tmat, vmat] = int_caler.mat1e([1, 1, 1], "car");
         let hmat = &tmat + &vmat; //核心哈密顿矩阵
         println!("核心哈密顿矩阵:");
@@ -137,15 +136,15 @@ impl<'m> RKS<'m> {
         let nato = smat.shape()[0];
 
         let [nela, nelb] = self.mole.atoms.neles;
-        let idxs = (0..(nela + nelb) / 2).collect(); // 占据轨道索引
-        println!("占据轨道索引: {:?}", idxs);
+        let nobt = (nela + nelb) / 2;
+        let occs: Vec<f64> = (0..nobt).map(|_| 2.0).collect();
         let atms = self.mole.atoms.idxs();
-        let ato_atms = &self.mole.basis.map_ato().atms("car");
+        let ato_atms = &self.mole.basis().atos().atms("car");
         let mut dmat = {
             let fmat_ = xmat.dot(&hmat).dot(&xmat);
-            let (_engs, cmat_) = fmat_.eigh(UPLO::Lower).expect("矩阵对角化失败");
+            let (_engs, cmat_) = maths::eigh(&fmat_);
             let cmat = xmat.dot(&cmat_);
-            calc_dmat(&cmat, &idxs, false)
+            calc_dmat(&cmat, &occs)
         }; // 密度矩阵初猜
         check_nele(&dmat, &smat);
         let ngrid = self.grids.len();
@@ -175,10 +174,10 @@ impl<'m> RKS<'m> {
             let [jmat, kmat] = self.calc_jkmat(&dmat, &emat); // fock 矩阵
             let fmat = &hmat + &jmat + &kmat * 0.20 + &xcmat;
             let fmat_ = xmat.dot(&fmat).dot(&xmat);
-            let (_engs, cmat_) = fmat_.eigh(UPLO::Lower).expect("矩阵对角化失败");
+            let (_engs, cmat_) = maths::eigh(&fmat_);
             engs = _engs.flatten().to_vec();
             let cmat = xmat.dot(&cmat_);
-            dmat = 0.5 * dmat + 0.5 * calc_dmat(&cmat, &idxs, false); // 更新密度矩阵
+            dmat = 0.5 * dmat + 0.5 * calc_dmat(&cmat, &occs); // 更新密度矩阵
             check_nele(&dmat, &smat);
             let eng = self.calc_ele_eng(&dmat, &hmat, &jmat, &kmat, &xcmat, &zk, &rho0s);
             let del_eng = eng - ele_eng;

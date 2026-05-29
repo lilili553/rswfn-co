@@ -10,31 +10,28 @@ use crate::{maths, reader};
 use core::fmt;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::str::FromStr;
 
 // use mem_dbg::MemDbg;
 
 #[derive(Debug, Clone)]
 pub struct Mole {
     pub atoms: Atoms,
-    pub basis: Basis,
-    pub coefs: Coefs,
+    pub basis: Option<Basis>,
+    pub coefs: Option<Coefs>,
 }
 
 impl Mole {
-    pub fn new(atoms: Atoms, basis: Basis, coefs: Coefs) -> Mole {
-        let mole = Self { atoms, basis, coefs };
+    pub fn new(atoms: Atoms, basis: Option<Basis>, coefs: Option<Coefs>) -> Mole {
+        let mut mole = Self { atoms, basis, coefs };
         mole
-    }
-
-    pub fn blank() -> Mole {
-        Mole { atoms: Atoms::blank(), basis: Basis::blank(), coefs: Coefs::blank() }
     }
 
     pub fn from_read(reader: &dyn Reader) -> Mole {
         let atoms = reader.get_atoms();
         let basis = reader.get_basis();
         let coefs = reader.get_coefs();
-        let mole = Mole { atoms, basis, coefs };
+        let mole = Mole::new(atoms, basis, coefs);
         mole
     }
 
@@ -59,11 +56,17 @@ impl Mole {
     }
 
     pub fn basis(&self) -> &Basis {
-        return &self.basis;
+        match &self.basis {
+            Some(basis) => basis,
+            None => panic!("该分子没有基组"),
+        }
     }
 
     pub fn coefs(&self) -> &Coefs {
-        return &self.coefs;
+        match &self.coefs {
+            Some(coefs) => coefs,
+            None => panic!("该分子没有系数"),
+        }
     }
 
     pub fn is_open(&self) -> bool {
@@ -95,7 +98,7 @@ impl Mole {
     pub fn charge(&self) -> isize {
         let [nela, nelb] = self.atoms.neles;
         let ncrg = self.ncrg();
-        nela as isize + nelb as isize - ncrg as isize
+        ncrg as isize - nela as isize - nelb as isize
     }
 
     pub fn multip(&self) -> usize {
@@ -190,7 +193,34 @@ impl fmt::Display for Mole {
         writeln!(f, "{:>3}{:>3}", charge, multip)?;
         write!(f, "{}", self.atoms())?;
         write!(f, "{}", self.basis())?;
-        write!(f, "{}", self.coefs())?;
+        let atos = &self.basis().atos().raws;
+        // for (i, ato) in atos.iter().enumerate() {
+        //     write!(f, "{:>3}{:>3}{:>3}{:>5}\n", i, ato.atm, ato.shl, ato.sym)?;
+        // }
+        let coefs = format!("{}", self.coefs());
+        let nato = atos.len();
+        for (l, line) in coefs.split("\n").enumerate() {
+            let idx = l % (nato + 2);
+            let ato_str = if idx >= 2 {
+                let atm = atos[idx - 2].atm;
+                let elm = &self.atoms.get(atm).sym;
+                let shl = atos[idx - 2].shl;
+                let sym = &atos[idx - 2].sym;
+                let loc = atos[idx - 2].loc;
+                format!(
+                    "{:>3}{:>3}{:>2}{:>3}{:>5}{:>3}",
+                    idx - 1,
+                    atm + 1,
+                    elm,
+                    shl + 1,
+                    sym,
+                    loc,
+                )
+            } else {
+                format!("                   ")
+            };
+            writeln!(f, "{}{}", ato_str, line)?;
+        }
         Ok(())
     }
 }
@@ -199,7 +229,14 @@ pub fn find_sssr(adjacency_list: &HashMap<usize, Vec<usize>>) -> Vec<Vec<usize>>
     let n = adjacency_list.len();
     let mut rings: Vec<Vec<usize>> = Vec::new();
 
-    fn dfs_find_rings(current: usize, start: usize, path: &mut Vec<usize>, visited: &mut HashSet<usize>, adjacency_list: &HashMap<usize, Vec<usize>>, rings: &mut Vec<Vec<usize>>) {
+    fn dfs_find_rings(
+        current: usize,
+        start: usize,
+        path: &mut Vec<usize>,
+        visited: &mut HashSet<usize>,
+        adjacency_list: &HashMap<usize, Vec<usize>>,
+        rings: &mut Vec<Vec<usize>>,
+    ) {
         path.push(current);
         visited.insert(current);
 
@@ -235,7 +272,14 @@ pub fn find_sssr(adjacency_list: &HashMap<usize, Vec<usize>>) -> Vec<Vec<usize>>
     for start_atom in 0..n as usize {
         let mut path = Vec::new();
         let mut visited = HashSet::new();
-        dfs_find_rings(start_atom, start_atom, &mut path, &mut visited, adjacency_list, &mut rings);
+        dfs_find_rings(
+            start_atom,
+            start_atom,
+            &mut path,
+            &mut visited,
+            adjacency_list,
+            &mut rings,
+        );
     }
 
     rings

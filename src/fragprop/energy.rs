@@ -21,8 +21,8 @@ impl<'m> Calculator<'m> {
         let (gridsA, weitsA) = gridCaler.frag_grids(&fragA);
         let (gridsB, weitsB) = gridCaler.frag_grids(&fragA);
         let atms = self.mole.atoms().idxs();
-        let rhosA: Vec<f64> = gridsA.iter().map(|grid| densCaler.mol_rho_dm(grid, 0).0).collect();
-        let rhosB: Vec<f64> = gridsB.iter().map(|grid| densCaler.mol_rho_dm(grid, 0).0).collect();
+        let rhosA: Vec<f64> = gridsA.iter().map(|grid| densCaler.mol_rho_dm(grid, 0).val0).collect();
+        let rhosB: Vec<f64> = gridsB.iter().map(|grid| densCaler.mol_rho_dm(grid, 0).val0).collect();
         let mut eng_ee = 0.0; // 电子-电子排斥
         let mut eng_en = 0.0; // 核-电子吸引
         let mut eng_nn = 0.0;

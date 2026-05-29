@@ -1,62 +1,56 @@
-use ndarray::{Array, Array2, Axis};
-use ndarray_linalg::{Eigh, UPLO};
-use std::f64::consts::PI;
-
+use crate::maths;
 use crate::{base::Vec3, utils};
+use ndarray::{Array1, Array2, Axis};
+use std::f64::consts::PI;
 
 /// 计算(重叠)矩阵的平方根 S^{1/2}
 pub fn matrix_phalf(smat: &Array2<f64>) -> Array2<f64> {
-    let (eig_val, vec_mat) = smat.eigh(UPLO::Lower).expect("矩阵对角化失败");
+    let (eig_val, vec_mat) = maths::eigh(smat);
     let nmat = smat.shape()[0];
-    let mut val_mat = Array::<f64, _>::zeros((nmat, nmat));
+    let mut val_mat = Array2::<f64>::zeros((nmat, nmat));
 
     for i in 0..nmat {
-        val_mat[(i, i)] = eig_val[i].sqrt();
+        let eig = eig_val[i];
+        let eig = if eig < 0.0 { 0.0 } else { eig };
+        val_mat[(i, i)] = eig.sqrt();
     }
     vec_mat.dot(&val_mat).dot(&vec_mat.t())
 }
 
 // S^{-1/2}
 pub fn matrix_nhalf(smat: &Array2<f64>) -> Array2<f64> {
-    let (eig_val, vec_mat) = smat.eigh(UPLO::Lower).unwrap_or_else(|_| {
-        utils::show_matrix(&smat);
-        panic!("矩阵对角化失败");
-    });
+    let (eig_val, vec_mat) = maths::eigh(smat);
     let nmat = smat.shape()[0];
-    let mut val_mat = Array::<f64, _>::zeros((nmat, nmat));
+    let mut val_mat = Array2::<f64>::zeros((nmat, nmat));
     for i in 0..nmat {
-        assert!(eig_val[i] > 0.0, "特征值不能有负值");
-        val_mat[(i, i)] = 1.0 / eig_val[i].sqrt();
+        let eig = eig_val[i];
+        let eig = if eig < 0.0 { 0.0 } else { eig };
+        val_mat[(i, i)] = 1.0 / eig.sqrt();
     }
     vec_mat.dot(&val_mat).dot(&vec_mat.t())
 }
-
-// pub fn calc_dmat(cmat: &Array2<f64>, occs: &Vec<usize>) -> Array2<f64> {
-//     let [nato, _nobt] = cmat.shape().try_into().expect("获取矩阵形状失败");
-//     let mut dmat = Array2::zeros((nato, nato));
-//     for i in 0..nato {
-//         for j in 0..nato {
-//             let mut val = 0.0;
-//             for (o, occ) in occs.iter().enumerate() {
-//                 if *occ == 0 {
-//                     continue;
-//                 }
-//                 val += cmat[(i, o)] * cmat[(j, o)] * *occ as f64;
-//             }
-//             dmat[(i, j)] = val;
-//         }
-//     }
-//     dmat
-// }
 
 /// 根据系数矩阵和轨道占据轨道索引计算密度矩
 /// - cmat: 系数矩阵
 /// - idxs: 轨道占据索引
 /// - open: 轨道是否为开壳层
-pub fn calc_dmat(cmat: &Array2<f64>, idxs: &Vec<usize>, open: bool) -> Array2<f64> {
-    let coef = if open { 1.0 } else { 2.0 };
-    let cmat = cmat.select(Axis(1), idxs);
-    let dmat = cmat.dot(&cmat.t()) * coef;
+pub fn calc_dmat(cmat: &Array2<f64>, obt_occs: &Vec<f64>) -> Array2<f64> {
+    let nato = cmat.nrows();
+    let nobt = cmat.ncols();
+    let mut dmat = Array2::<f64>::zeros((nato, nato));
+    for i in 0..nobt {
+        let occ = obt_occs[i];
+        if occ == 0.0 {
+            continue;
+        }
+        let col = cmat.column(i);
+        // 外积 col * col^T 作为密度矩阵贡献
+        for a in 0..nato {
+            for b in 0..nato {
+                dmat[(a, b)] += col[a] * col[b] * occ;
+            }
+        }
+    }
     dmat
 }
 
@@ -239,10 +233,82 @@ pub fn fac2(n: isize) -> isize {
     }
 }
 
-// pub fn powi(val: f64, n: usize) -> f64 {
-//     let mut res = 1.0;
-//     for _ in 0..n {
-//         res *= val;
-//     }
-//     res
-// }
+#[cfg(feature = "use-lina")]
+pub fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
+    use ndarray_linalg::{Eigh, UPLO};
+    mat.eigh(UPLO::Lower).expect("矩阵对角化失败")
+}
+
+#[cfg(feature = "use-faer")]
+pub fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
+    use faer::Side;
+    use faer::linalg::solvers::FullPivLu;
+    let mat = into_faer(mat);
+    let eigen = mat.self_adjoint_eigen(Side::Lower).unwrap();
+    let S = eigen.S();
+    let U = eigen.U();
+    let nrow = mat.nrows();
+    let mut eig_val = Array1::zeros(nrow);
+    let mut eig_vec = Array2::zeros((nrow, nrow));
+    for i in 0..nrow {
+        eig_val[i] = S[i];
+        for j in 0..nrow {
+            eig_vec[(i, j)] = U[(i, j)];
+        }
+    }
+    (eig_val, eig_vec)
+}
+
+#[cfg(feature = "use-lina")]
+pub fn inv(mat: &Array2<f64>) -> Array2<f64> {
+    use ndarray_linalg::Inverse;
+    mat.inv().expect("矩阵求逆失败")
+}
+
+#[cfg(feature = "use-faer")]
+pub fn inv(mat: &Array2<f64>) -> Array2<f64> {
+    use faer::linalg::solvers::DenseSolveCore;
+    let mat = into_faer(mat);
+    let lu = mat.partial_piv_lu();
+    let mat = lu.inverse();
+    from_faer(&mat)
+}
+
+#[cfg(feature = "use-lina")]
+pub fn det(mat: &Array2<f64>) -> f64 {
+    use ndarray_linalg::Determinant;
+    mat.det().expect("矩阵求行列式失败")
+}
+
+#[cfg(feature = "use-faer")]
+pub fn det(mat: &Array2<f64>) -> f64 {
+    let mat = into_faer(mat);
+    mat.determinant()
+}
+
+#[cfg(feature = "use-faer")]
+fn into_faer(mat: &Array2<f64>) -> faer::Mat<f64> {
+    use faer::Mat;
+    let nrow = mat.nrows();
+    let ncol = mat.ncols();
+    let mut mat = Mat::zeros(nrow, ncol);
+    for i in 0..nrow {
+        for j in 0..ncol {
+            mat[(i, j)] = mat[(i, j)];
+        }
+    }
+    mat
+}
+
+#[cfg(feature = "use-faer")]
+fn from_faer(mat: &faer::Mat<f64>) -> Array2<f64> {
+    let nrow = mat.nrows();
+    let ncol = mat.ncols();
+    let mut arr = Array2::zeros((nrow, ncol));
+    for i in 0..nrow {
+        for j in 0..ncol {
+            arr[(i, j)] = mat[(i, j)];
+        }
+    }
+    arr
+}

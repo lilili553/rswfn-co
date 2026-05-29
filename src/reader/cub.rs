@@ -26,9 +26,10 @@ impl CubReader {
 
     pub fn read_cube(&self) -> CubeGrid {
         let mut start = [0.0; 3];
-        start[0] = self.lines[2][5..17].trim().parse::<f64>().unwrap();
-        start[1] = self.lines[2][17..29].trim().parse::<f64>().unwrap();
-        start[2] = self.lines[2][29..41].trim().parse::<f64>().unwrap();
+        let px = self.lines[2][5..17].trim().parse::<f64>().unwrap();
+        let py = self.lines[2][17..29].trim().parse::<f64>().unwrap();
+        let pz = self.lines[2][29..41].trim().parse::<f64>().unwrap();
+        let start = [px * BOHR, py * BOHR, pz * BOHR];
         let mut shape = [0; 3];
         for i in 0..3 {
             let line = &self.lines[i + 3];
@@ -37,7 +38,7 @@ impl CubReader {
         let sx = self.lines[3][5..17].trim().parse::<f64>().unwrap();
         let sy = self.lines[4][17..29].trim().parse::<f64>().unwrap();
         let sz = self.lines[5][29..41].trim().parse::<f64>().unwrap();
-        let steps = [sx, sy, sz];
+        let steps = [sx * BOHR, sy * BOHR, sz * BOHR];
         CubeGrid { shape, start, steps }
     }
 
@@ -50,9 +51,9 @@ impl CubReader {
             let line = &self.lines[l];
             let atm = line[..5].trim().parse::<usize>().unwrap();
             let crg = line[5..17].trim().parse::<f64>().unwrap();
-            let x = line[17..29].trim().parse::<f64>().unwrap() / BOHR;
-            let y = line[29..41].trim().parse::<f64>().unwrap() / BOHR;
-            let z = line[41..53].trim().parse::<f64>().unwrap() / BOHR;
+            let x = line[17..29].trim().parse::<f64>().unwrap() * BOHR;
+            let y = line[29..41].trim().parse::<f64>().unwrap() * BOHR;
+            let z = line[41..53].trim().parse::<f64>().unwrap() * BOHR;
             atms.push(atm);
             crgs.push(crg);
             xyzs.push([x, y, z]);
@@ -82,14 +83,14 @@ impl CubReader {
 impl Reader for CubReader {
     fn get_atoms(&self) -> Atoms {
         let (atms, crgs, xyzs) = self.read_atms();
-        Atoms::new(&atms, &xyzs, &crgs, None)
+        Atoms::new(&atms, &xyzs, &crgs)
     }
 
-    fn get_basis(&self) -> Basis {
-        Basis::blank()
+    fn get_basis(&self) -> Option<Basis> {
+        None
     }
 
-    fn get_coefs(&self) -> Coefs {
-        Coefs::blank()
+    fn get_coefs(&self) -> Option<Coefs> {
+        None
     }
 }

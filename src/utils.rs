@@ -1,5 +1,5 @@
-use ndarray::Array2;
-use ndarray_linalg::Inverse;
+use crate::maths;
+use ndarray::{Array1, Array2};
 use std::path::Path;
 
 pub fn has_nan(matrix: &Array2<f64>) -> bool {
@@ -101,10 +101,7 @@ pub fn posi_matrix(mat: &Array2<f64>) -> bool {
         return false;
     }
     let mat_t = mat.t();
-    let mat_i = match mat.inv() {
-        Ok(mat_i) => mat_i,
-        Err(_) => return false,
-    };
+    let mat_i = maths::inv(mat);
     for i in 0..nrow {
         for j in 0..ncol {
             let del = mat_t[(i, j)] - mat_i[(i, j)];
@@ -149,21 +146,3 @@ pub fn all_same<T: PartialEq>(vals0: &Vec<T>, vals1: &Vec<T>) -> bool {
     }
     return true;
 }
-
-// pub trait Linalg {
-//     fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>);
-// }
-
-// impl Linalg for Array2<f64> {
-//     fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
-//         let nrow = mat.nrows();
-//         let ncol = mat.ncols();
-//         let fmat = Mat::<f64>::zeros(nrow, ncol);
-//         for i in 0..nrow {
-//             for j in 0..ncol {
-//                 fmat[(i, j)] = mat[(i, j)];
-//             }
-//         }
-//         fmat.llt(side)
-//     }
-// }

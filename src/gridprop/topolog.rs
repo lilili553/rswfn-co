@@ -5,10 +5,10 @@
 */
 use crate::base::Mole;
 use crate::gridprop::density;
+use crate::maths;
+
 use ndarray::Array2;
 
-use ndarray_linalg::Inverse;
-use ndarray_linalg::{Determinant, EigValsh};
 use rayon::prelude::*;
 
 pub struct Calculator<'m> {
@@ -28,21 +28,22 @@ impl<'m> Calculator<'m> {
         let mut rho = 0.0;
         for _i in 0..100 {
             // 最多迭代100次
-            let (rho0, rho1, rho2) = rho_caler.mol_rho_dm(&grid, 2);
-            rho = rho0;
-            Hessian = Array2::from_shape_vec((3, 3), rho2.iter().cloned().flatten().collect()).expect("矩阵生成失败");
+            let rhos = rho_caler.mol_rho_dm(&grid, 2);
+            rho = rhos.val0;
+            Hessian =
+                Array2::from_shape_vec((3, 3), rhos.val2.iter().cloned().flatten().collect()).expect("矩阵生成失败");
             // Hessian=Hessian.t().to_owned();
-            let det = Hessian.det().expect("行列式计算失败");
+            let det = maths::det(&Hessian);
 
             if det.abs() < 1e-10 {
                 break;
             }
-            let [dx, dy, dz] = rho1;
+            let [dx, dy, dz] = rhos.val1;
             if (dx.powi(2) + dy.powi(2) + dz.powi(2)).sqrt() < 1e-6 {
                 break;
             }
-            let Hessinv = Hessian.inv().expect("逆矩阵计算失败");
-            let gradent = Array2::from_shape_vec((3, 1), rho1.to_vec()).expect("矩阵生成失败");
+            let Hessinv = maths::inv(&Hessian);
+            let gradent = Array2::from_shape_vec((3, 1), rhos.val1.to_vec()).expect("矩阵生成失败");
             let delta = Hessinv.dot(&gradent).flatten().to_vec();
             let mx = delta[0];
             let my = delta[1];
@@ -51,7 +52,7 @@ impl<'m> Calculator<'m> {
             grid[1] -= my;
             grid[2] -= mz;
         }
-        let eig_vals = Hessian.eigvalsh(ndarray_linalg::UPLO::Lower).expect("求本征值失败");
+        let eig_vals = maths::eigh(&Hessian).0;
         let mut n_pos = 0;
         let mut n_neg = 0;
         for val in eig_vals.iter() {
@@ -90,6 +91,9 @@ impl<'m> Calculator<'m> {
 
         let ngrid = grids.len();
         let aims: Vec<([f64; 3], f64, i32)> = (0..ngrid).into_par_iter().map(|g| self.AIM(&grids[g])).collect();
-        aims.iter().filter(|aim| aim.1 > 1e-3).map(|aim| (aim.0, aim.2)).collect()
+        aims.iter()
+            .filter(|aim| aim.1 > 1e-3)
+            .map(|aim| (aim.0, aim.2))
+            .collect()
     }
 }

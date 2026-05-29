@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::OnceLock;
 
-use crate::base::{Atoms, Basis, BasisData, Coefs};
+use crate::base::{Atoms, Basis, Coefs};
 use crate::datas::btrans;
-use crate::reader::{Reader, read_lines};
+use crate::reader::{BasData, Reader, read_lines, shl_basis, shl_forms};
 
 pub struct MdeReader {
     path: String,
@@ -18,7 +18,7 @@ pub struct MdeReader {
         Vec<usize>,
         Vec<usize>,
         Vec<String>,
-        Vec<BasisData>,
+        Vec<BasData>,
     )>,
 }
 
@@ -78,8 +78,8 @@ impl MdeReader {
         (atms, xyzs)
     }
 
-    pub fn read_basis(&self) -> (&Vec<usize>, &Vec<usize>, &Vec<String>, &Vec<BasisData>) {
-        let (ato_atms, ato_shls, ato_syms, data) = self.read_basis.get_or_init(|| {
+    pub fn read_basis(&self) -> (&Vec<usize>, &Vec<usize>, &Vec<String>, &Vec<BasData>) {
+        let (ato_atms, ato_shls, ato_syms, datas) = self.read_basis.get_or_init(|| {
             let reg1 = Regex::new(r"^ +(\d+)( +\d)?$").expect("正则表达式构建失败");
             let reg2 = Regex::new(r" *([spdf]) +(\d+)( 1.0)? *").expect("正则表达式构建失败");
             let reg3_1 = Regex::new(r"^ +(-?\d+.\d+E[+-]\d+) +(-?\d+.\d+E[+-]\d+)").expect("正则表达式构建失败");
@@ -92,7 +92,7 @@ impl MdeReader {
             let mut ato_syms = Vec::new();
             let mut ato_atms = Vec::new();
             let mut ato_shls = Vec::new();
-            let mut data: Vec<BasisData> = Vec::new();
+            let mut datas: Vec<BasData> = Vec::new();
             for l in (*mark + 1)..self.lines.len() {
                 let line = self.lines.get(l).unwrap();
                 if line == "" {
@@ -149,7 +149,7 @@ impl MdeReader {
                     let alp = caps[1].parse::<f64>().expect("parse error");
                     let exp = caps[2].parse::<f64>().expect("parse error");
                     let ang = syms.iter().position(|&x| x == sym).expect(&format!("get pos error: {}", sym));
-                    data.push(BasisData::new(atm, shl - 1, ang, alp, exp, (0, 0, 0)));
+                    datas.push((atm, shl - 1, ang, alp, exp));
                     continue;
                 }
                 if reg3_2.is_match(line) {
@@ -157,7 +157,7 @@ impl MdeReader {
                     let alp = caps[1].parse::<f64>().expect("parse error");
                     let exp = caps[2].parse::<f64>().expect("parse error");
                     let ang = syms.iter().position(|&x| x == sym).expect("get pos error");
-                    data.push(BasisData::new(atm, shl - 1, ang, alp, exp, (0, 0, 0)));
+                    datas.push((atm, shl - 1, ang, alp, exp));
                     continue;
                 }
 
@@ -174,12 +174,12 @@ impl MdeReader {
                 panic!("未读取到任何原子轨道数据");
             };
             let ato_syms = ato_syms.iter().map(|sym| sym.to_string()).collect();
-            (ato_atms, ato_shls, ato_syms, data)
+            (ato_atms, ato_shls, ato_syms, datas)
         });
-        (ato_atms, ato_shls, ato_syms, data)
+        (ato_atms, ato_shls, ato_syms, datas)
     }
 
-    pub fn read_coefs(&self) -> (Vec<f64>, Vec<usize>, Vec<Vec<f64>>) {
+    pub fn read_coefs(&self) -> (Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
         let reg2 = Regex::new(r" Ene= +(-?\d+.\d+)").expect("reg new error");
         let reg4 = Regex::new(r" Occup= +(\d.\d+)").expect("reg new error");
         let reg5 = Regex::new(r"^ *(\d+) +(-?\d+.\d+)$").expect("reg new error");
@@ -212,7 +212,7 @@ impl MdeReader {
             if reg4.is_match(line) {
                 let caps = reg4.captures(line).expect("cap error");
                 let occ = caps[1].parse::<f64>().expect("parse error");
-                obt_occs.push(occ as usize);
+                obt_occs.push(occ);
                 continue;
             }
             if reg5.is_match(line) {
@@ -229,32 +229,15 @@ impl MdeReader {
     }
 
     pub fn read_neles(&self) -> [usize; 2] {
-        let coefs = self.get_coefs();
-        let occs = &coefs.obt_occs;
-        let cmat = coefs.get_cmat("sph");
-        let nobt = cmat.ncols();
+        let occs = self.read_coefs().1;
+        let nobt = occs.len();
         let mut neles = [0; 2];
-        if coefs.is_open() {
-            // 开壳层
-            for (i, occ) in occs.iter().enumerate() {
-                if *occ == 0 {
-                    continue;
-                }
-                if i < nobt / 2 {
-                    neles[0] += 1;
-                } else {
-                    neles[1] += 1;
-                }
+        for occ in occs.iter() {
+            if *occ == 0.0 {
+                continue;
             }
-        } else {
-            // 闭壳层
-            for occ in occs.iter() {
-                if *occ == 0 {
-                    continue;
-                }
-                neles[0] += 1;
-                neles[1] += 1;
-            }
+            neles[0] += 1;
+            neles[1] += 1;
         }
         neles
     }
@@ -264,31 +247,36 @@ impl Reader for MdeReader {
     fn get_atoms(&self) -> Atoms {
         let (atms, xyzs) = self.read_geome();
         let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-        let mut atoms = Atoms::new(&atms, &xyzs, &crgs, None);
+        let mut atoms = Atoms::new(&atms, &xyzs, &crgs);
         atoms.neles = self.read_neles();
         atoms
     }
 
-    fn get_basis(&self) -> Basis {
-        let mut data = self.read_basis().3.clone();
-        for data in data.iter_mut() {
-            let alp = data.alp;
-            let coe = data.coe;
-            let ang = data.ang;
+    fn get_basis(&self) -> Option<Basis> {
+        let (ato_atms, ato_shls, ato_syms, datas) = self.read_basis();
+        let mut datas = datas.clone();
+        for data in datas.iter_mut() {
+            let ang = data.2;
+            let alp = data.3;
+            let coe = data.4;
             let nm = (2.0 * alp / PI).powf(0.75) * (4.0 * alp).powf(ang as f64 / 2.0);
-            data.coe = coe / nm;
+            data.4 = coe / nm;
         }
-        let basis = Basis::new(data, None);
-        basis
+
+        datas.sort_by_key(|data| (data.0, data.1, data.2));
+
+        let forms = shl_forms(ato_atms, ato_shls, ato_syms);
+        Some(shl_basis(&datas, &forms))
     }
 
-    fn get_coefs(&self) -> Coefs {
+    fn get_coefs(&self) -> Option<Coefs> {
         let (ato_atms, ato_shls, ato_syms, _) = self.read_basis();
         let (obt_engs, obt_occs, cmat) = self.read_coefs();
         let nobt = cmat.len();
         let nato = cmat[0].len();
         let cmat = Array2::from_shape_vec((nobt, nato), cmat.into_iter().flatten().collect()).expect("cmat error");
         let cmat = cmat.t().to_owned();
-        Coefs::new(ato_atms.clone(), ato_shls.clone(), ato_syms.clone(), obt_engs, obt_occs, cmat)
+        let coefs = Coefs::new(ato_atms.clone(), ato_shls.clone(), ato_syms.clone(), obt_engs, obt_occs, cmat);
+        Some(coefs)
     }
 }

@@ -1,4 +1,4 @@
-use crate::base::{Atoms, Basis, Coefs};
+use crate::base::{Atoms, Bas, Basis, Coefs};
 use crate::datas::elems::sym2atm;
 use crate::reader::{Reader, read_lines};
 
@@ -36,14 +36,14 @@ impl Reader for SdfReader {
     fn get_atoms(&self) -> Atoms {
         let (atms, xyzs) = self.read_geome();
         let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-        Atoms::new(&atms, &xyzs, &crgs, None)
+        Atoms::new(&atms, &xyzs, &crgs)
     }
 
-    fn get_basis(&self) -> crate::base::Basis {
-        Basis::blank()
+    fn get_basis(&self) -> Option<Basis> {
+        None
     }
 
-    fn get_coefs(&self) -> crate::base::Coefs {
-        Coefs::blank()
+    fn get_coefs(&self) -> Option<Coefs> {
+        None
     }
 }

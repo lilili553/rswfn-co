@@ -21,7 +21,7 @@ impl<'m> Calculator<'m> {
             None => vec![atoms.idxs().clone()], // 只有一个环，且为所有原子
         };
         let caler = order::Calculator::new(self.mole);
-        let (_dirs, omat) = caler.pi_pocv();
+        let (_dirs, omat) = caler.pi_pocv("mayer");
         let mut vals = Vec::new();
         let syms = self.mole.atoms().syms();
         for ring in rings {

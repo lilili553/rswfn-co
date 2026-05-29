@@ -13,5 +13,5 @@ pub use obj::ObjWriter;
 pub use xyz::XyzWriter;
 
 pub trait Writer {
-    fn from_mole(&mut self, mole: &crate::base::Mole);
+    fn read_mole(&mut self, mole: &crate::base::Mole);
 }

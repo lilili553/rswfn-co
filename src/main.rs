@@ -20,18 +20,15 @@ mod orbtprop;
 mod tests;
 
 mod cli;
-mod cmd;
+mod tui;
 
 use std;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    // println!("欢迎使用rswfn: 基于rust的波函数分析工具");
-    // tests::test();
     if args.len() > 1 {
-        println!("args:{:?}", args);
-        cmd::main();
+        cli::main();
     } else {
-        cli::Main::new();
+        tui::Main::new();
     }
 }

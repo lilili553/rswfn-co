@@ -14,7 +14,7 @@ use crate::base::{Mole, Stm, Vec3};
 use crate::maths;
 use crate::moleprop::newmole;
 use crate::orbtprop;
-use crate::orbtprop::obtmat::Mocv;
+// use crate::orbtprop::obtmat::Mocv;
 // use crate::utils;
 
 pub struct Calculator<'m> {
@@ -52,17 +52,20 @@ impl<'m> Calculator<'m> {
     }
 
     pub fn mulliken(&self) -> Vec<f64> {
-        let dmat = self.mole.coefs().get_dmat("sph");
-        let smat = self.mole.basis().get_smat("sph", self.mole); // 重叠矩阵
-        let uplo = self.mole.atoms().ato_uplo("sph", self.mole);
+        let atoms = self.mole.atoms();
+        let basis = self.mole.basis();
+        let coefs = self.mole.coefs();
+        let dmat = coefs.get_dmat("raw", basis);
+        let smat = basis.get_smat("raw", atoms); // 重叠矩阵
+        let uplo = coefs.atm_uplo("raw", basis);
         mulliken(dmat, smat, &uplo)
     }
 
     // 计算lowdin 电荷，返回电子数量
     pub fn lowdin(&self) -> Vec<f64> {
-        let dmat = self.mole.coefs().get_dmat("sph");
-        let smat = self.mole.basis().get_smat("sph", self.mole);
-        let uplo = self.mole.atoms().ato_uplo("sph", self.mole);
+        let dmat = self.mole.coefs().get_dmat("raw", self.mole.basis());
+        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
+        let uplo = self.mole.coefs().atm_uplo("raw", self.mole.basis());
         lowdin(dmat, smat, &uplo, None)
     }
 
@@ -72,52 +75,41 @@ impl<'m> Calculator<'m> {
         let atoms = self.mole.atoms();
         let natm = atoms.len();
         let mut eles = vec![0.0; natm]; // 原子的电子数
+        let (mole_grids, mole_weits) = gridClaer.mol_grids(75, 434);
+        let ngrid = mole_grids.len();
+        let mole_dens: Vec<f64> = mole_grids
+            .par_iter()
+            .map(|grid| densCaler.mol_rho_dm(grid, 0).val0)
+            .collect();
+        let pro_mole_dens: Vec<f64> = mole_grids.par_iter().map(|grid| densCaler.pro_rho(grid)).collect();
+        let mut pro_atom_dens = vec![0.0; ngrid];
+        let mut atom_weits = vec![0.0; ngrid];
+
         // 计算原子与格点之间的距离
         for i in 0..natm {
-            let (atm_grids, atm_weits) = gridClaer.atm_grids(i, 75, 434);
-
-            let ngrid = atm_grids.len();
-            let mut pro_dens: Array1<f64> = Array1::zeros(ngrid);
-            let mut sum_dens: Array1<f64> = Array1::zeros(ngrid);
-            let atms = self.mole.atoms().idxs();
-            let mol_dens: Vec<f64> = (0..ngrid).into_par_iter().map(|g| densCaler.mol_rho_dm(&atm_grids[g], 0).0).collect();
-            let mol_dens = Array1::from_vec(mol_dens);
-
-            for j in 0..natm {
-                let atom_j = atoms.get(j as usize);
-
-                let fdens: Vec<f64> = (0..ngrid)
-                    .into_par_iter()
-                    .map(|g| {
-                        let dist = maths::calc_dist(&atm_grids[g], &atom_j.xyz);
-                        rdens::get_radDens_v1(atom_j.nuc, dist)
-                    })
-                    .collect();
-
-                let fdens = Array1::from_vec(fdens.to_vec());
-
-                if i == j {
-                    pro_dens = fdens.clone();
-                }
-                sum_dens += &fdens;
-            }
-            let atom_i = atoms.get(i as usize);
-            eles[i] = (0..ngrid)
-                .into_par_iter()
+            let nuc = atoms.get(i as usize).nuc;
+            let [ax, ay, az] = atoms.get(i as usize).xyz;
+            pro_atom_dens = mole_grids
+                .par_iter()
+                .map(|grid| {
+                    let [gx, gy, gz] = grid;
+                    let [dx, dy, dz] = [gx - ax, gy - ay, gz - az];
+                    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                    rdens::get_rad_dens_v1(nuc, dist)
+                })
+                .collect();
+            atom_weits = (0..ngrid)
                 .map(|g| {
-                    let dist = maths::calc_dist(&atm_grids[g], &atom_i.xyz);
-                    if dist > 10.0 {
-                        return 0.0;
-                    } else if sum_dens[g].abs() < 1e-10 {
-                        return 0.0;
+                    if pro_mole_dens[g] > 1e-12 {
+                        pro_atom_dens[g] / pro_mole_dens[g]
                     } else {
-                        let weit = pro_dens[g] / sum_dens[g];
-                        return weit * mol_dens[g] * atm_weits[g];
+                        0.0
                     }
                 })
-                .collect::<Vec<f64>>()
-                .iter()
-                .sum::<f64>();
+                .collect();
+            for g in 0..ngrid {
+                eles[i] += mole_dens[g] * mole_weits[g] * atom_weits[g];
+            }
 
             log::info!("原子{:>3}  电子数:{:>10.4}", i, eles[i]);
         }
@@ -135,24 +127,32 @@ impl<'m> Calculator<'m> {
 
     // 分子轨道内原子电子布局
     pub fn eles_obt(&self, ctype: &str, obt: usize) -> Vec<f64> {
-        let smat = self.mole.basis().get_smat("sph", self.mole);
-        let old_cmat = self.mole.coefs().get_cmat("sph");
+        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
+        let old_cmat = self.mole.coefs().get_cmat("raw", self.mole.basis());
         let nato = old_cmat.nrows();
         let nobt = old_cmat.ncols();
         let mut new_cmat = Array2::zeros((nato, nobt));
+        let nocc = if self.mole.is_open() { 1.0 } else { 2.0 };
         new_cmat.slice_mut(s![.., obt]).assign(&old_cmat.slice(s![.., obt]));
-        let dmat = old_cmat.dot(&new_cmat.t());
-        let uplo = self.mole.atoms().ato_uplo("sph", self.mole);
+        let dmat = old_cmat.dot(&new_cmat.t()) * nocc;
+        let uplo = self.mole.coefs().atm_uplo("raw", self.mole.basis());
         mulliken(&dmat, smat, &uplo)
     }
 
     // 计算经过pocv方法改造过后的分子轨道的电子布居
-    pub fn pocv(&self, dirs: &HashMap<usize, Vec3>, keep_other_atm: bool, keep_other_sym: bool, ctype: &str) -> Vec<f64> {
+    pub fn pocv(
+        &self,
+        dirs: &HashMap<usize, Vec3>,
+        keep_other_atm: bool,
+        keep_other_sym: bool,
+        ctype: &str,
+    ) -> Vec<f64> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
         let cmat_pocv = obt_caler.pocv(dirs, keep_other_atm, keep_other_sym);
 
         let mut mole_pocv = self.mole.clone();
-        mole_pocv.coefs.set_cmat("sph", &cmat_pocv);
+        let basis = mole_pocv.basis.as_ref().unwrap();
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, basis);
         let ele_caler = Calculator::new(&mole_pocv);
         match ctype {
             "mulliken" => ele_caler.mulliken(),
@@ -162,16 +162,13 @@ impl<'m> Calculator<'m> {
         }
     }
 
-    pub fn mocv(
-        &self,
-        mocvs: &HashMap<usize, Mocv>, // 每个原子的保留信息
-        ctype: &str,
-    ) -> Vec<f64> {
+    pub fn mocv(&self, stms: &HashMap<usize, Stm>, atos: &Vec<usize>, ctype: &str) -> Vec<f64> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
-        let cmat_mocv = obt_caler.mocv(mocvs);
+        let cmat_mocv = obt_caler.mocv(stms, atos);
 
         let mut mole_mocv = self.mole.clone();
-        mole_mocv.coefs.set_cmat("sph", &cmat_mocv);
+        let basis = mole_mocv.basis.as_ref().unwrap();
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, basis);
         let ele_caler = Calculator::new(&mole_mocv);
         match ctype {
             "mulliken" => ele_caler.mulliken(),
@@ -181,18 +178,14 @@ impl<'m> Calculator<'m> {
         }
     }
 
-    // 多局部坐标系的MOCV算法
-    pub fn mocv_mult(&self, atm: usize) {
-        let nebs = self.mole.atoms().nebs(atm);
-    }
-
     pub fn pi_pocv(&self, ctype: &str) -> (HashMap<usize, Vec3>, Vec<f64>) {
         let mut obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
         obt_caler.atms = self.atms;
         let (dirs, cmat_pocv) = obt_caler.pi_pocv();
 
         let mut mole_pocv = self.mole.clone();
-        mole_pocv.coefs.set_cmat("sph", &cmat_pocv);
+        let basis = mole_pocv.basis.as_ref().unwrap();
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, basis);
         let ele_caler = Calculator::new(&mole_pocv);
         let eles = match ctype {
             "mulliken" => ele_caler.mulliken(),
@@ -203,53 +196,21 @@ impl<'m> Calculator<'m> {
         (dirs, eles)
     }
 
-    pub fn pi_mocv(&self, ctype: &str) -> (HashMap<usize, Mocv>, Vec<f64>) {
+    pub fn pi_mocv(&self, ctype: &str) -> (HashMap<usize, Stm>, Vec<usize>, Vec<f64>) {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
-        let (mocvs, cmat_mocv) = obt_caler.pi_mocv();
+        let (stms, atos, cmat_mocv) = obt_caler.pi_mocv(0);
         let mut mole_mocv = self.mole.clone();
-        mole_mocv.coefs.set_cmat("sph", &cmat_mocv);
-        let ele_caler = Calculator::new(&mole_mocv);
+        let basis = mole_mocv.basis.as_ref().unwrap();
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, basis);
+        let caler = Calculator::new(&mole_mocv);
         let eles = match ctype {
-            "mulliken" => ele_caler.mulliken(),
-            "lowdin" => ele_caler.lowdin(),
-            "hirshfeld" => ele_caler.hirshfeld(),
+            "mulliken" => caler.mulliken(),
+            "lowdin" => caler.lowdin(),
+            "hirshfeld" => caler.hirshfeld(),
             _ => panic!("未知的ctype"),
         };
-        (mocvs, eles)
+        (stms, atos, eles)
     }
-
-    // /// 计算三个垂直与键轴的
-    // pub fn pi_mocv_split(&self, atm: usize) -> f64 {
-    //     let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
-    //     let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
-    //     let atoms = self.mole.atoms();
-    //     let nebs = atoms.nebs(atm);
-    //     let obts = self.mole.coefs().obt_idxs(true);
-    //     let smat = self.mole.coefs().get_smat("car", self.mole);
-    //     let nato = smat.nrows();
-    //     let mut dmat = Array2::<f64>::zeros((nato, nato));
-    //     let uplo = self.mole.atoms().ato_uplo("car", self.mole);
-    //     let [up, lo] = uplo[atm];
-    //     for idx in nebs.iter() {
-    //         // let dir_caler.LCS(atm, *idx);
-    //         let stm = dir_caler.LCS(atm, Some(*idx));
-    //         if let Some(stm) = stm {
-    //             let mocv = Mocv::new(stm, [0], [0, 0, 1], [0, 0, 1, 0, 1, 0]);
-    //             let mut mocvs = HashMap::with_capacity(2);
-    //             mocvs.insert(atm, mocv.clone());
-    //             mocvs.insert(*idx, mocv);
-    //             let cmat_mocv = obt_caler.mocv(&mocvs);
-    //             let mut dmat_mocv = maths::calc_dmat(&cmat_mocv, obts);
-    //             dmat_mocv.slice_mut(s![up..lo, up..lo]).fill(0.0);
-    //             dmat = dmat + dmat_mocv;
-    //             // obt_caler.mocv()
-    //         }
-    //     }
-    //     // let smat = smat - Array2::eye(nato); // 不考虑自己和自己的重叠
-    //     let uplo = &self.mole.atoms().ato_uplo("car", self.mole);
-    //     let omat = mulliken(&dmat, &smat, uplo);
-    //     omat[atm]
-    // }
 
     pub fn pi_ldao(&self) -> (HashMap<usize, Stm>, Vec<f64>) {
         let mut stms = HashMap::new();
@@ -264,11 +225,11 @@ impl<'m> Calculator<'m> {
         }
         let cmat_caler = orbtprop::obtmat::Calculator::new(self.mole);
         let cmat = cmat_caler.ldao(&stms); // 局部坐标系的分子轨道
-        let idxs = self.mole.coefs().obt_idxs(true);
-        let dmat = maths::calc_dmat(&cmat, idxs, self.mole.is_open());
-        let smat = self.mole.basis().get_smat("car", self.mole);
-        let syms = self.mole.coefs().ato_syms("car");
-        let atms = self.mole.coefs().ato_atms("car");
+        let occs = self.mole.coefs().obt_occs.clone();
+        let dmat = maths::calc_dmat(&cmat, &occs);
+        let smat = self.mole.basis().get_smat("car", self.mole.atoms());
+        let syms = self.mole.basis().atos().syms("car");
+        let atms = self.mole.basis().atos().atms("car");
         let atoms = self.mole.atoms();
         let mut atos = vec![false; syms.len()];
         for (i, sym) in syms.iter().enumerate() {
@@ -282,7 +243,7 @@ impl<'m> Calculator<'m> {
                 atos[i] = true;
             }
         }
-        let uplo = self.mole.atoms().ato_uplo("sph", self.mole);
+        let uplo = self.mole.coefs().atm_uplo("raw", self.mole.basis());
         let eles = lowdin(&dmat, &smat, &uplo, Some(&atos));
         (stms, eles)
     }
@@ -291,6 +252,7 @@ impl<'m> Calculator<'m> {
 pub fn mulliken(dmat: &Array2<f64>, smat: &Array2<f64>, uplo: &Vec<[usize; 2]>) -> Vec<f64> {
     assert_eq!(dmat.shape(), smat.shape());
     let qmat = dmat * smat;
+
     let nato = dmat.nrows(); // 基函数数量
     let natm = uplo.len();
     let mut eles = vec![0.0; natm];
@@ -331,4 +293,120 @@ pub fn lowdin(dmat: &Array2<f64>, smat: &Array2<f64>, uplo: &Vec<[usize; 2]>, at
         }
     }
     eles
+}
+
+pub fn hirshfeld(
+    atom_nucs: Vec<usize>,
+    atom_xyzs: Vec<[f64; 3]>,
+    mole_grids: &Vec<[f64; 3]>,
+    mole_weits: &Vec<f64>,
+    mole_dens: &Vec<f64>,
+    pro_mole_dens: &Vec<f64>,
+) -> Vec<f64> {
+    let natm = atom_nucs.len();
+    let mut eles = vec![0.0; natm]; // 原子的电子数
+    let ngrid = mole_grids.len();
+    let mut pro_atom_dens = vec![0.0; ngrid];
+    let mut atom_weits = vec![0.0; ngrid];
+
+    // 计算原子与格点之间的距离
+    for i in 0..natm {
+        let nuc = atom_nucs[i];
+        let [ax, ay, az] = atom_xyzs[i];
+        pro_atom_dens = mole_grids
+            .par_iter()
+            .map(|grid| {
+                let [gx, gy, gz] = grid;
+                let [dx, dy, dz] = [gx - ax, gy - ay, gz - az];
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                rdens::get_rad_dens_v1(nuc, dist)
+            })
+            .collect();
+        atom_weits = (0..ngrid)
+            .map(|g| {
+                if pro_mole_dens[g] > 1e-12 {
+                    pro_atom_dens[g] / pro_mole_dens[g]
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        for g in 0..ngrid {
+            eles[i] += mole_dens[g] * mole_weits[g] * atom_weits[g];
+        }
+
+        log::info!("原子{:>3}  电子数:{:>10.4}", i, eles[i]);
+    }
+    eles
+}
+
+fn check(res: Vec<f64>, ans: Vec<f64>) {
+    assert_eq!(res.len(), ans.len());
+    for i in 0..res.len() {
+        assert!(
+            (res[i] - ans[i]).abs() < 1e-4,
+            "res[{}] = {}, ans[{}] = {}",
+            i,
+            res[i],
+            i,
+            ans[i]
+        );
+    }
+}
+
+#[test]
+fn test_charge() {
+    let path = String::from(r"E:\code\rswfn\moles\C6H6.fch");
+    let mole = Mole::from_file(&path);
+
+    let caler = Calculator::new(&mole);
+    let res = caler.mulliken();
+    let ans = vec![
+        6.12846023, 6.12846024, 6.12846023, 6.12846023, 6.12846024, 6.12846023, 0.87153977, 0.87153977, 0.87153977,
+        0.87153977, 0.87153977, 0.87153977,
+    ];
+    check(res, ans);
+    let res = caler.lowdin();
+    let ans = vec![
+        6.15647202, 6.15982449, 6.15982449, 6.15647202, 6.15982449, 6.15982449, 0.84289460, 0.84049220, 0.84049220,
+        0.84289460, 0.84049220, 0.84049220,
+    ];
+    check(res, ans);
+    let mut res = caler.hirshfeld();
+    let res = (0..res.len()).map(|atm| mole.atoms.get(atm).crg - res[atm]).collect();
+    let ans = vec![
+        -0.04268004,
+        -0.04261213,
+        -0.04261213,
+        -0.04268004,
+        -0.04261213,
+        -0.04261213,
+        0.04262433,
+        0.04263998,
+        0.04263999,
+        0.04262433,
+        0.04263998,
+        0.04263999,
+    ];
+    check(res, ans);
+    let (dirs, vals) = caler.pi_pocv("mulliken");
+    let ans = vec![
+        0.98514, 0.98514, 0.98514, 0.98514, 0.98514, 0.98514, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    ];
+    println!("pi_pocv:{:?}", vals);
+    check(vals, ans);
+    let (dirs, atos, vals) = caler.pi_mocv("mulliken");
+    let ans = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    println!("pi_mocv:{:?}", vals);
+    check(vals, ans);
+    // 测试自旋
+    let path = String::from(r"E:\code\rswfn\moles\C6H6_N.fch");
+    let mole = Mole::from_file(&path);
+    let caler = Calculator::new(&mole);
+    let res = caler.spin("mulliken").iter().map(|row| row[2]).collect();
+    let ans = vec![
+        -0.11890, 0.32872, 0.32872, -0.11890, 0.32872, 0.32872, 0.00392, -0.02123, -0.02123, 0.00392, -0.02123,
+        -0.02123,
+    ];
+    check(res, ans);
 }

@@ -10,7 +10,6 @@ use crate::{
     maths, utils,
 };
 use ndarray::{Array2, s};
-use ndarray_linalg::{Eigh, UPLO};
 
 #[rustfmt::skip]
 const XS: [f64; 60] = [
@@ -23,14 +22,14 @@ const XS: [f64; 60] = [
 ];
 
 // 两个基函数都在x轴上时的重叠积分，根据三次样条插值得到
-pub fn get_integ_x(Zi: usize, Zj: usize, Pi: usize, Pj: usize, dist: f64) -> f64 {
+pub fn get_integ_x(zi: usize, zj: usize, pi: usize, pj: usize, dist: f64) -> f64 {
     if dist > 3.0 {
         return 0.0;
     }
     if dist == 0.0 {
         return 1.0;
     }
-    let paras = get_paras(Zi, Zj, Pi, Pj); // 获取三次样条插值的参数
+    let paras = get_paras(zi, zj, pi, pj); // 获取三次样条插值的参数
     let mut idx = 0;
     for i in 0..59 {
         if dist >= XS[i] && dist < XS[i + 1] {
@@ -43,7 +42,7 @@ pub fn get_integ_x(Zi: usize, Zj: usize, Pi: usize, Pj: usize, dist: f64) -> f64
 }
 
 // 计算两个任意朝向的Pz轨道的重叠积分
-pub fn get_integ_d(Zi: usize, Zj: usize, Di: &Vec3, Dj: &Vec3, stm: Stm, dist: f64) -> f64 {
+pub fn get_integ_d(zi: usize, zj: usize, di: &Vec3, dj: &Vec3, stm: Stm, dist: f64) -> f64 {
     // println!("Di:{}", Di.norm());
     // println!("Dj:{}", Dj.norm());
     // println!("Dj:{:?}", Dj);
@@ -58,9 +57,9 @@ pub fn get_integ_d(Zi: usize, Zj: usize, Di: &Vec3, Dj: &Vec3, stm: Stm, dist: f
     for i in 0..3 {
         let axi = &axs[i];
         // println!("axi:{}", axi.norm());
-        let ci = Di.dot(&axi);
-        let cj = Dj.dot(&axi);
-        let sv = get_integ_x(Zi, Zj, ps[i], ps[i], dist);
+        let ci = di.dot(&axi);
+        let cj = dj.dot(&axi);
+        let sv = get_integ_x(zi, zj, ps[i], ps[i], dist);
         // println!("{} {:>10.4} {:>10.4} {:>10.4}", i, sv, ci, cj);
         val += sv * ci * cj;
     }
@@ -106,7 +105,7 @@ pub fn dhmo_calc_v2(mole: &Mole) {
             let Zj = nucs[aj];
             let Di = &ato_dirs[i];
             let Dj = &ato_dirs[j];
-            let dist = atoms.dist(ai, aj) * BOHR;
+            let dist = atoms.dist(ai, aj) / BOHR;
 
             let sval = get_integ_d(Zi, Zj, &Di, &Dj, stm, dist);
             println!("{}-{}:{:>10.4},{:>10.4}", ai + 1, aj + 1, dist, sval);
@@ -133,7 +132,7 @@ pub fn dhmo_calc_v2(mole: &Mole) {
     utils::show_matrix(&hmat);
     let xmat = maths::matrix_nhalf(&smat);
     let hmat_ = xmat.t().dot(&hmat).dot(&xmat);
-    let (engs, cmat_) = hmat_.eigh(UPLO::Lower).unwrap();
+    let (engs, cmat_) = maths::eigh(&hmat);
     let cmat = xmat.dot(&cmat_);
     println!("cmat:");
     utils::show_matrix(&cmat);
@@ -161,12 +160,15 @@ pub fn dhmo_calc_v2(mole: &Mole) {
     for i in 0..nato {
         uplo.push([i, i + 1]);
     }
-    let omat = bondprop::order::mayer(&dmat, &smat, &uplo);
-    println!("omat:");
-    utils::show_matrix(&omat);
-    for i in 0..nato - 1 {
-        for j in i + 1..nato {
-            let val = omat[(i, j)].abs().sqrt();
+    let omat_ato = bondprop::order::mayer(&dmat, &smat);
+    let omat_atm = bondprop::order::ato2atm(&omat_ato, &uplo);
+    println!("omat_ato:");
+    utils::show_matrix(&omat_ato);
+    println!("omat_atm:");
+    utils::show_matrix(&omat_atm);
+    for i in 0..natm - 1 {
+        for j in i + 1..natm {
+            let val = omat_atm[(i, j)].abs().sqrt();
             if val.abs() < 1e-5 {
                 continue;
             }

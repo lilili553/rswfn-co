@@ -88,27 +88,54 @@ impl<'m> Calculator<'m> {
         [e0, en, ep, _fn, _fp, f0, df]
     }
 
-    // 计算某个原子某个方向的活性
-    pub fn vector(&self, atm: usize, dir: &Vec3, otype: &str) -> (Vec<usize>, Vec<f64>, f64) {
-        let STAND = 3.0;
-        let caler = bondprop::order::Calculator::new(&self.mole);
-        let (nebs, vals) = caler.bound(atm, dir, otype);
-
-        let value = STAND - vals.iter().sum::<f64>();
-        (nebs, vals, value)
-    }
-
-    pub fn free_valence(&self) -> Vec<f64> {
-        let caler = bondprop::order::Calculator::new(&self.mole);
-        let (dirs, omat) = caler.pi_pocv();
-        let atoms = self.mole.atoms();
-        let natm = atoms.len();
-        let mut vals = vec![0.0; natm];
-        for i in 0..natm {
-            for neb in atoms.nebs(i as usize) {
-                vals[i] += omat[(i, neb as usize)]
+    // 自由价 freevalence
+    pub fn freev(&self, otype: &str) -> Vec<[f64; 3]> {
+        let caler = bondprop::order::Calculator::new(self.mole);
+        let omat = caler.order(otype);
+        let natm = self.mole.atoms.len();
+        let mut crgs = self.mole.atoms.crgs();
+        let mut vals = vec![[0.0; 3]; natm];
+        for ai in 0..natm {
+            vals[ai][0] = element_valence(crgs[ai] as usize)[0] as f64;
+            for aj in self.mole.atoms.nebs(ai) {
+                vals[ai][1] += omat[(ai, aj)];
             }
+            vals[ai][2] = vals[ai][0] - vals[ai][1]
         }
         vals
+    }
+
+    pub fn freev_pi(&self, otype: &str) -> (HashMap<usize, Vec3>, Vec<[f64; 3]>) {
+        let caler = bondprop::order::Calculator::new(&self.mole);
+        let (dirs, omat) = caler.pi_pocv(otype);
+        let natm = self.mole.atoms.len();
+        let mut crgs = self.mole.atoms.crgs();
+        let mut vals = vec![[0.0; 3]; natm];
+        for ai in 0..natm {
+            vals[ai][0] = element_valence(crgs[ai] as usize)[1] as f64;
+            for aj in self.mole.atoms.nebs(ai) {
+                vals[ai][1] += omat[(ai, aj)];
+            }
+            vals[ai][2] = vals[ai][0] - vals[ai][1]
+        }
+        (dirs, vals)
+    }
+
+    // 计算某个原子某个方向的活性 活性矢量/方向自由价
+    pub fn freev_dir(&self, atm: usize, dir: &Vec3, nebs: &Vec<usize>, otype: &str) -> (f64, Vec<f64>, f64) {
+        let crg = self.mole.atoms.crgs()[atm];
+        let STAND = element_valence(crg as usize)[1];
+        let caler = bondprop::order::Calculator::new(&self.mole);
+        let vals = caler.bound(atm, dir, nebs, otype);
+        let value = STAND - vals.iter().sum::<f64>();
+        (STAND, vals, value)
+    }
+}
+
+// 返回元素的价数和pi价数
+pub fn element_valence(crg: usize) -> [f64; 2] {
+    match crg {
+        6 => [4.0, 3.0],
+        _ => [4.0, 3.0],
     }
 }

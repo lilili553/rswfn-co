@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 // 此模块定义积分函数
 // use ndarray::Array2;
-use crate::base::{Ato, MapAto, Mole, Stm};
+use crate::base::{Ato, Atoms, Atos, Basis, Mole, Stm};
 use crate::datas::FACS;
-use crate::datas::btrans::{ang2lmns, get_mat, sym2lmn};
+use crate::datas::btrans::{ang2lmns, sym2lmn};
 use crate::datas::integ::{RHM, WHM};
 use crate::datas::rys_root;
 use crate::datas::{btrans, mocv};
@@ -47,7 +47,7 @@ impl Gto {
     }
 }
 
-struct Int_val_1e {
+struct IntVal1e {
     Ga: Gto,
     Gb: Gto,
     p: f64,
@@ -60,7 +60,7 @@ struct Int_val_1e {
     eval_d: HashMap<(isize, isize, isize, usize), f64>,
 }
 
-impl Int_val_1e {
+impl IntVal1e {
     fn new(Ga: Gto, Gb: Gto) -> Self {
         let p = Ga.alp + Gb.alp;
         let u = Ga.alp * Gb.alp / p;
@@ -316,7 +316,7 @@ impl Int_val_1e {
     }
 }
 
-struct Int_val_2e<'g> {
+struct IntVal2e<'g> {
     Ga: &'g Gto,
     Gb: &'g Gto,
     Gc: &'g Gto,
@@ -329,7 +329,7 @@ struct Int_val_2e<'g> {
     eval_d: HashMap<(isize, isize, isize, usize, String), f64>,
 }
 
-impl<'g> Int_val_2e<'g> {
+impl<'g> IntVal2e<'g> {
     pub fn new(Ga: &'g Gto, Gb: &'g Gto, Gc: &'g Gto, Gd: &'g Gto) -> Self {
         let (Kp, Gp) = Ga.prod(&Gb);
         let (Kq, Gq) = Gc.prod(&Gd);
@@ -533,17 +533,17 @@ impl Mat2e {
     }
 }
 
-pub struct Int_mat<'m> {
-    mole: &'m Mole,
+pub struct RsInt<'m> {
+    basis: &'m Basis,
     xyzs: &'m Vec<[f64; 3]>, // 每个原子的坐标
     crgs: &'m Vec<f64>,
 }
 
-impl<'m> Int_mat<'m> {
-    pub fn new(mole: &'m Mole) -> Self {
-        let xyzs = mole.atoms.xyzs();
-        let crgs = mole.atoms.crgs();
-        Self { mole, xyzs, crgs }
+impl<'m> RsInt<'m> {
+    pub fn new(atoms: &'m Atoms, basis: &'m Basis) -> Self {
+        let xyzs = atoms.xyzs();
+        let crgs = atoms.crgs();
+        Self { basis, xyzs, crgs }
     }
 
     pub fn smat(&self, form: &str) -> Array2<f64> {
@@ -558,15 +558,15 @@ impl<'m> Int_mat<'m> {
         self.mat1e([0, 0, 1], form)[2].clone()
     }
 
-    #[cfg(feature = "use-c")]
+    #[cfg(feature = "use-cint")]
     pub fn mat1e(&self, cals: [usize; 3], form: &str) -> [Array2<f64>; 3] {
-        let cint = cint::Cint::new(self.mole);
+        let cint = cint::Cint::new(self.basis, self.xyzs, self.crgs);
         cint.calc_int1e(form, cals)
     }
 
-    #[cfg(any(feature = "ban-c"))]
+    #[cfg(not(feature = "use-cint"))]
     pub fn mat1e(&self, cals: [usize; 3], form: &str) -> [Array2<f64>; 3] {
-        let atos = &self.mole.basis.map_ato().cars;
+        let atos = &self.basis.atos().cars;
         let nato = atos.len(); // 原子轨道数量
         let mut smat = Array2::zeros((nato, nato)); // 核引矩阵
         let mut tmat = Array2::zeros((nato, nato)); // 核引矩阵
@@ -588,7 +588,7 @@ impl<'m> Int_mat<'m> {
                     for b in 0..nj {
                         let Ga = Gto::new(*gi_lmn, atos[i].alps[a], gi_xyz);
                         let Gb = Gto::new(*gj_lmn, atos[j].alps[b], gj_xyz);
-                        let mut ints = Int_val_1e::new(Ga, Gb);
+                        let mut ints = IntVal1e::new(Ga, Gb);
                         let coef = coes_i[a] * coes_j[b];
                         if cals[0] == 1 {
                             let sval = ints.sval();
@@ -617,10 +617,21 @@ impl<'m> Int_mat<'m> {
                 vmat = self.mat1e_sph(&vmat);
             }
         }
+        if form == "raw" {
+            if cals[0] == 1 {
+                smat = self.mat1e_raw(&smat);
+            }
+            if cals[1] == 1 {
+                tmat = self.mat1e_raw(&tmat);
+            }
+            if cals[2] == 1 {
+                vmat = self.mat1e_raw(&vmat);
+            }
+        }
         [smat, tmat, vmat]
     }
 
-    #[cfg(feature = "use-c")]
+    #[cfg(feature = "use-cint")]
     pub fn mat2e(&self, form: &str) -> Mat2e {
         println!("使用libcint");
         let cint = cint::Cint::new(self.mole);
@@ -628,9 +639,9 @@ impl<'m> Int_mat<'m> {
         return Mat2e::from_mat4(mat4);
     }
     // 双电子库伦积分
-    #[cfg(any(feature = "ban-c"))]
+    #[cfg(not(feature = "use-cint"))]
     pub fn mat2e(&self, form: &str) -> Mat2e {
-        let atos = &self.mole.basis.map_ato().cars;
+        let atos = &self.basis.atos().cars;
         let nato = atos.len(); // 原子轨道数量
         let mut emat = Mat2e::new(nato);
         // let count = nato * nato * nato * nato;
@@ -670,7 +681,7 @@ impl<'m> Int_mat<'m> {
                                             let Gb = Gto::new(*gj_lmn, atos[j].alps[b], gj_xyz);
                                             let Gc = Gto::new(*gk_lmn, atos[k].alps[c], gk_xyz);
                                             let Gd = Gto::new(*gl_lmn, atos[l].alps[d], gl_xyz);
-                                            let gval = Int_val_2e::new(&Ga, &Gb, &Gc, &Gd).gval();
+                                            let gval = IntVal2e::new(&Ga, &Gb, &Gc, &Gd).gval();
                                             sum += gval * coes_i[a] * coes_j[b] * coes_k[c] * coes_l[d];
                                         }
                                     }
@@ -687,42 +698,78 @@ impl<'m> Int_mat<'m> {
     }
 
     pub fn mat1e_sph(&self, car_mat: &Array2<f64>) -> Array2<f64> {
-        let map_shl = self.mole.basis.map_shl();
-        let nshl = map_shl.len();
-        // let uplo_sph = map_shl.sph().1;
-        let uplo_sph = map_shl.uplo("sph");
-        let uplo_car = map_shl.uplo("car");
-        let nato_sph = map_shl.nato("sph");
-        // let nato_car = map_shl.nato("car");
+        let shls = &self.basis.shls;
+        let nshl = shls.len();
+        let uplo_sph = shls.uplo("sph");
+        let uplo_car = shls.uplo("car");
+        let nato_sph = shls.nato("sph");
         let mut sph_mat = Array2::zeros((nato_sph, nato_sph));
         for i in 0..nshl {
+            let angi = shls.get(i).ang;
             let [cui, cli] = uplo_car[i];
             let [sui, sli] = uplo_sph[i];
-            let tmati = get_mat(cli - cui);
+            let tmati = btrans::car2sph_mat(angi);
             for j in 0..nshl {
+                let angj = shls.get(j).ang;
                 let [cuj, clj] = uplo_car[j];
                 let [suj, slj] = uplo_sph[j];
-                let tmatj = get_mat(clj - cuj);
-                let car_part = car_mat.slice(s![cui..cli, cuj..clj]);
-                let sph_part: Array2<f64> = tmati.t().dot(&car_part).dot(&tmatj);
+                let tmatj = btrans::sph2car_mat(angj);
+                let car_part = car_mat.slice(s![cui..cli, cuj..clj]).to_owned();
+                let sph_part: Array2<f64> = tmati.dot(&car_part);
+                let sph_part = sph_part.dot(&tmatj);
+
                 sph_mat.slice_mut(s![sui..sli, suj..slj]).assign(&sph_part);
             }
         }
         sph_mat
     }
 
+    // 将笛卡尔重叠矩阵转为原始重叠矩阵
+    pub fn mat1e_raw(&self, car_mat: &Array2<f64>) -> Array2<f64> {
+        let shls = &self.basis.shls;
+        let nshl = shls.len();
+        let uplo_raw = shls.uplo("raw");
+        let uplo_car = shls.uplo("car");
+        let nato_raw = shls.nato("raw");
+        let mut smat_raw = Array2::zeros((nato_raw, nato_raw));
+        for i in 0..nshl {
+            let ang_i = shls.get(i).ang;
+            let [up_car_i, lo_car_i] = uplo_car[i];
+            let [up_raw_i, lo_raw_i] = uplo_raw[i];
+            let n_car_i = lo_car_i - up_car_i;
+            let n_raw_i = lo_raw_i - up_raw_i;
+            let tmati = btrans::sph2car_mat(ang_i);
+            for j in 0..nshl {
+                let angj = shls.get(j).ang;
+                let [up_car_j, lo_car_j] = uplo_car[j];
+                let [up_raw_j, lo_raw_j] = uplo_raw[j];
+                let n_car_j = lo_car_j - up_car_j;
+                let n_raw_j = lo_raw_j - up_raw_j;
+                let tmatj = btrans::sph2car_mat(angj);
+                let mut raw_part = car_mat.slice(s![up_car_i..lo_car_i, up_car_j..lo_car_j]).to_owned();
+                if n_car_i != n_raw_i {
+                    raw_part = tmati.t().dot(&raw_part)
+                }
+                if n_car_j != n_raw_j {
+                    raw_part = raw_part.dot(&tmatj)
+                }
+                smat_raw.slice_mut(s![up_raw_i..lo_raw_i, up_raw_j..lo_raw_j]).assign(&raw_part);
+            }
+        }
+        smat_raw
+    }
+
     // 获取局部坐标系的单电子积分
     pub fn mat1e_lcs(&self, stms: &HashMap<usize, Stm>, cals: [usize; 3]) -> [Array2<f64>; 3] {
-        let map_shl = self.mole.basis().map_shl();
-        let shls = &map_shl.shls;
-        let uplo = map_shl.uplo("car");
-        let nshl = map_shl.len();
+        let shls = &self.basis.shls;
+        let uplo = shls.uplo("car");
+        let nshl = shls.len();
         // let atms = &map_shl.atms;
 
         let mut Tmats = HashMap::new();
         for i in 0..nshl {
             let num = uplo[i][1] - uplo[i][0];
-            let atm = shls[i].atm;
+            let atm = shls.get(i).atm;
             let tmat = mocv::get_tmat_car(num, &stms[&atm].mat);
             Tmats.insert(i, tmat); // 局部坐标系系数到全局坐标系系数的转换矩阵
         }
@@ -758,9 +805,8 @@ impl<'m> Int_mat<'m> {
 
     /// 获取局部坐标系的双电子积分
     pub fn mat2e_lcs(&self, stms: &HashMap<usize, Stm>) -> Mat2e {
-        let map_shl = self.mole.basis().map_shl();
-        let shls = &map_shl.shls;
-        let uplo = map_shl.uplo("car");
+        let shls = &self.basis.shls;
+        let uplo = shls.uplo("car");
         let nshl = uplo.len();
         // let atms = &map_shl.atms;
         let gemat = self.mat2e("car"); // 全局坐标系的双电子积分
@@ -770,7 +816,7 @@ impl<'m> Int_mat<'m> {
         let mut Tmats = HashMap::new();
         for i in 0..nshl {
             let num = uplo[i][1] - uplo[i][0];
-            let atm = shls[i].atm;
+            let atm = shls.get(i).atm;
             let tmat = mocv::get_tmat_car(num, &stms[&atm].mat);
             Tmats.insert(i, tmat); // 局部坐标系系数到全局坐标系系数的转换矩阵
         }

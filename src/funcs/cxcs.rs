@@ -1,12 +1,14 @@
 use std::mem::MaybeUninit;
 use std::os::raw::c_int;
 
+#[cfg(feature = "use-func")]
 use crate::funcs::bind_funcs;
+#[cfg(feature = "use-func")]
 use crate::funcs::bind_xc;
 
 // 调用libxc
 
-#[cfg(feature = "use-c")]
+#[cfg(feature = "use-func")]
 pub fn xc_version() -> String {
     let mut major = 0;
     let mut minor = 0;
@@ -17,7 +19,7 @@ pub fn xc_version() -> String {
     format!("{}.{}.{}", major, minor, micro)
 }
 
-#[cfg(feature = "use-c")]
+#[cfg(feature = "use-func")]
 pub fn init_func(open: bool) -> MaybeUninit<bind_xc::xc_func_type> {
     let mut xc_func = MaybeUninit::<bind_xc::xc_func_type>::uninit();
     let nspin = if open { bind_xc::XC_POLARIZED } else { bind_xc::XC_UNPOLARIZED };
@@ -31,7 +33,7 @@ pub fn init_func(open: bool) -> MaybeUninit<bind_xc::xc_func_type> {
     xc_func
 }
 
-#[cfg(feature = "use-c")]
+#[cfg(feature = "use-func")]
 // 获取泛函的类型
 pub fn get_family(mut xc_func: MaybeUninit<bind_xc::xc_func_type>) -> u32 {
     let xc_family = unsafe {

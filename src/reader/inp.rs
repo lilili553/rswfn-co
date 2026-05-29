@@ -48,19 +48,18 @@ impl InpReader {
 }
 
 impl Reader for InpReader {
-    fn get_basis(&self) -> Basis {
-        Basis::blank()
-    }
-
-    fn get_coefs(&self) -> Coefs {
-        Coefs::blank()
-    }
-
     fn get_atoms(&self) -> Atoms {
         let (syms, xyzs) = self.read_geome();
         let atms: Vec<usize> = syms.iter().map(|sym| sym2atm(&sym.to_uppercase())).collect();
         let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-        Atoms::new(&atms, &xyzs, &crgs, None)
+        Atoms::new(&atms, &xyzs, &crgs)
+    }
+    fn get_basis(&self) -> Option<Basis> {
+        None
+    }
+
+    fn get_coefs(&self) -> Option<Coefs> {
+        None
     }
 }
 

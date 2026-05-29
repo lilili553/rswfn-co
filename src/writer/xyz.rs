@@ -19,7 +19,7 @@ impl XyzWriter {
         for i in 0..self.syms.len() {
             let sym = &self.syms[i];
             let [x, y, z] = &self.xyzs[i];
-            geom += &format!("{:>3}           {:>14.8}{:>14.8}{:>14.8}\n", sym, x * BOHR, y * BOHR, z * BOHR);
+            geom += &format!("{:>3}           {:>14.8}{:>14.8}{:>14.8}\n", sym, x / BOHR, y / BOHR, z / BOHR);
         }
         let natm = self.syms.len();
         temps::XYZ.replace("{natm}", &format!("{}", natm)).replace("{title}", &self.title).replace("{geome}", &geom).to_string()
@@ -32,7 +32,7 @@ impl XyzWriter {
 }
 
 impl Writer for XyzWriter {
-    fn from_mole(&mut self, mole: &crate::base::Mole) {
+    fn read_mole(&mut self, mole: &crate::base::Mole) {
         let syms = mole.atoms.syms();
         let xyzs = mole.atoms.xyzs();
         self.syms = syms;

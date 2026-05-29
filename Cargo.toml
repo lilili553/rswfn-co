@@ -12,18 +12,20 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ndarray = "0.16"
-ndarray-linalg = { version = "0.17.0" }
-regex = "1.11.1"                                  # 正则表达式库
-rayon = "1.5.1"                                   # 并行计算库
+ndarray-linalg = { version = "0.17.0", optional = true }
+faer = { version = "0.24.0", optional = true }
+regex = "1.11.1"                                         # 正则表达式库
+rayon = "1.5.1"                                          # 并行计算库
 mem_dbg = "0.3.0"
-rand = "0.9.1"                                    # 随机数库
-log = "0.4.28"                                    # 日志库
+rand = "0.9.1"                                           # 随机数库
+log = "0.4.28"                                           # 日志库
 simplelog = "0.12.2"
-clap = { version = "4.0", features = ["derive"] } # 命令行工具库
-memmap2 = "0.9.9"                                 # 内存映射库，将硬盘当成内存用
+clap = { version = "4.0", features = ["derive"] }        # 命令行工具库
+memmap2 = "0.9.9"                                        # 内存映射库，将硬盘当成内存用
 special = "0.11.4"
 chrono = "0.4"
-cached = "0.56.0"                                 # 函数级缓存库
+cached = "0.56.0"                                        # 函数级缓存库
+
 
 [profile.dev]
 incremental = true
@@ -37,6 +39,10 @@ panic = "abort"   # Higher performance by disabling panic handlers.
 debug = true      # 进行性能测试的时候需要打开
 
 [features]
-default = ["ban-c"]
-use-c = ["ndarray-linalg/openblas-system"]
-ban-c = ["ndarray-linalg/intel-mkl-static"]
+default = ["use-mkl", "use-lina"]
+use-cint = []                                 # 使用libcint
+use-func = []                                 # 使用泛函库
+use-blas = ["ndarray-linalg/openblas-system"]
+use-mkl = ["ndarray-linalg/intel-mkl-static"]
+use-faer = ["faer"]
+use-lina = ["ndarray-linalg"]

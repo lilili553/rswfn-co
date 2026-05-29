@@ -1,17 +1,17 @@
 // 生成fch文件
 
+use ndarray::{Array2, s};
 use std::collections::HashMap;
-use ndarray::{s};
 
+use crate::base::{Atoms, Basis, Coefs, Mole};
 use crate::datas::elems;
-use crate::base::{Basis, Coefs, Atoms, Mole};
 use crate::utils;
 use crate::writer::Writer;
 
 pub struct FchWriter {
     pub charge: isize,
     pub multip: usize,
-    pub atoms:Atoms,
+    pub atoms: Atoms,
     pub basis: Basis,
     pub coefs: Coefs,
 }
@@ -21,14 +21,14 @@ impl FchWriter {
         Self {
             charge: 0,
             multip: 1,
-            atoms: Atoms::blank(),
-            basis: Basis::blank(),
-            coefs: Coefs::blank()
+            atoms: Atoms::new(&vec![], &vec![], &vec![]),
+            basis: Basis::new(vec![]),
+            coefs: Coefs::new(vec![], vec![], vec![], vec![], vec![], Array2::zeros((0, 0))),
         }
     }
 
-    pub fn from_mole(mole:&Mole)->Self{
-        Self{
+    pub fn from_mole(mole: &Mole) -> Self {
+        Self {
             charge: mole.charge(),
             multip: mole.multip(),
             atoms: mole.atoms().clone(),
@@ -36,21 +36,16 @@ impl FchWriter {
             coefs: mole.coefs().clone(),
         }
     }
-    
+
     #[rustfmt::skip]
     pub fn build(&self)->String {
         let mut text = String::new();
         let atoms=&self.atoms;
         let natm=atoms.len();
-        let nele=self.coefs.obt_eles();
+        let nele=self.coefs.obt_eles(&self.basis);
         let syms=atoms.syms();
         let xyzs=atoms.xyzs();
-        let mut stms=vec![];
-        for stm in atoms.stms(){
-            let vals=stm.vals();
-            stms.extend(vals);
-        }
-        let cmat=self.coefs.get_cmat("sph");
+        let cmat=self.coefs.get_cmat("sph", &self.basis);
         let [nato,nobt]=cmat.shape().try_into().expect("获取分子轨道形状失败");
         // let nbas=self.basis.map_ato().len();
         let nbas=nato;
@@ -73,9 +68,6 @@ impl FchWriter {
         text.push_str(&format!("Current cartesian coordinates              R   N={:>12}\n",natm*3));
         let xyz_vec:Vec<f64>=xyzs.iter().flat_map(|xyz|xyz.iter().copied()).collect();
         text.push_str(&f2str(&xyz_vec));
-        
-        text.push_str(&format!("Local Coord Systems                        R   N={:>12}\n",stms.len()));
-        text.push_str(&f2str(&stms));
 
         text.push_str("Translation vectors                        R   N=           0\n");
         // 基组信息
@@ -120,8 +112,8 @@ impl FchWriter {
             text.push_str(&format!("Beta MO coefficients                       R   N={:>12}\n",coefs_b.len()));
             text.push_str(&f2str(&coefs_b));
         }
-        
-        let dmat=self.coefs.get_dmat("sph");
+
+        let dmat=self.coefs.get_dmat("sph", &self.basis);
         let mut dvec=Vec::new();
         for i in 0..nato{
             for j in 0..i{
@@ -133,129 +125,97 @@ impl FchWriter {
         text
     }
 
-    pub fn save(&self, path: &str){
+    pub fn save(&self, path: &str) {
         let text = self.build();
         std::fs::write(path, text).expect("Unable to write file");
     }
 }
 
-fn i2str(nums:&Vec<isize>)->String{
+fn i2str(nums: &Vec<isize>) -> String {
     let mut text = String::new();
-    for (i,num) in nums.iter().enumerate(){
-            text.push_str(&format!("{:>12}",num));
-            if (i+1)%6==0{text.push_str("\n");}
+    for (i, num) in nums.iter().enumerate() {
+        text.push_str(&format!("{:>12}", num));
+        if (i + 1) % 6 == 0 {
+            text.push_str("\n");
         }
-    if nums.len()%6!=0{
+    }
+    if nums.len() % 6 != 0 {
         text.push_str("\n");
     }
     text
 }
 
-fn f2str(nums:&Vec<f64>)->String{
+fn f2str(nums: &Vec<f64>) -> String {
     let mut text = String::new();
-    for (i,num) in nums.iter().enumerate(){
-            let fort=utils::fort_form(*num, 8);
-            text.push_str(&format!("{:>16}",fort));
-            
-            if (i+1)%5==0{text.push_str("\n");}
+    for (i, num) in nums.iter().enumerate() {
+        let fort = utils::fort_form(*num, 8);
+        text.push_str(&format!("{:>16}", fort));
+
+        if (i + 1) % 5 == 0 {
+            text.push_str("\n");
         }
-    if nums.len()%5!=0{
+    }
+    if nums.len() % 5 != 0 {
         text.push_str("\n");
     }
     text
 }
 
-struct ShlInfo{
-    atom:usize,
-    alps:Vec<f64>,
-    coes:Vec<f64>,
-    pm_alps:Vec<f64>,
-    pm_coes:Vec<f64>,
-    sp_coes:Vec<f64>,
-    angs:Vec<usize>,
+struct ShlInfo {
+    atom: usize,
+    alps: Vec<f64>,
+    coes: Vec<f64>,
+    pm_alps: Vec<f64>,
+    pm_coes: Vec<f64>,
+    sp_coes: Vec<f64>,
+    angs: Vec<usize>,
 }
 
-impl ShlInfo{
-    pub fn blank()->Self{
-        Self{
-            atom:0,
-            alps:Vec::new(),
-            coes:Vec::new(),
-            pm_alps:Vec::new(),
-            pm_coes:Vec::new(),
-            sp_coes:Vec::new(),
-            angs:Vec::new(),
+impl ShlInfo {
+    pub fn blank() -> Self {
+        Self {
+            atom: 0,
+            alps: Vec::new(),
+            coes: Vec::new(),
+            pm_alps: Vec::new(),
+            pm_coes: Vec::new(),
+            sp_coes: Vec::new(),
+            angs: Vec::new(),
         }
     }
 }
 
-fn basis_info(basis:&Basis)->(usize,Vec<isize>,Vec<usize>,Vec<usize>,Vec<f64>,Vec<f64>,Vec<f64>){
-    let mut shl_types=Vec::new();
-    let mut shl_nbass=Vec::new();
-    let mut shl_atoms=Vec::new();
+fn basis_info(basis: &Basis) -> (usize, Vec<isize>, Vec<usize>, Vec<usize>, Vec<f64>, Vec<f64>, Vec<f64>) {
+    let mut shl_types = Vec::new();
+    let mut shl_nbass = Vec::new();
+    let mut shl_atoms = Vec::new();
     // let mut keys=Vec::new();
-    let mut nbas:usize=1;
-    let mut pm_alps=Vec::new();
-    let mut pm_coes=Vec::new();
-    let mut sp_coes=Vec::new();
-    let mut data=HashMap::new();
-    let mut keys=Vec::new();
-    for (i,each) in basis.data.iter().enumerate(){
-        let key=(each.atm,each.shl);
-        if !data.contains_key(&key){
-            let mut info=ShlInfo::blank();
-            info.atom=each.atm;
-            data.insert(key, info);
-            keys.push(key);
-
-        }
-        let info= data.get_mut(&key).unwrap();
-        if !info.angs.contains(&each.ang){
-            info.angs.push(each.ang);
-        }
-        info.alps.push(each.alp);
-        info.coes.push(each.coe);
-        nbas+=1;
-    }
-    for key in keys.iter(){
-        let info= data.get_mut(key).unwrap();
-        shl_atoms.push(info.atom+1);
-        let num=info.alps.len();
-        if info.angs.len()==1{
-            info.pm_alps=info.alps.clone();
-            info.pm_coes=info.coes.clone();
-            info.sp_coes=vec![0.0;num];
-            shl_types.push(info.angs[0] as isize);
-            shl_nbass.push(num);
-        }
-        else if info.angs.len()==2{
-            info.pm_alps=info.alps[..num/2].to_vec();
-            info.pm_coes=info.coes[..num/2].to_vec();
-            info.sp_coes=info.coes[num/2..].to_vec();
-            shl_types.push(-1);
-            shl_nbass.push(num/2);
-        }
-        else{
-            panic!("角动量数量不对")
-        }
-        pm_alps.extend(info.pm_alps.clone());
-        pm_coes.extend(info.pm_coes.clone());
-        sp_coes.extend(info.sp_coes.clone());
+    let mut nbas: usize = 1;
+    let mut pm_alps = Vec::new();
+    let mut pm_coes = Vec::new();
+    let mut sp_coes = Vec::new();
+    let nshl = basis.shls.len();
+    for i in 0..nshl {
+        let shl = basis.shls.get(i);
+        shl_types.push(shl.ang as isize);
+        shl_nbass.push(shl.alps.len());
+        pm_alps.extend(shl.alps.clone());
+        pm_coes.extend(shl.coes.clone());
     }
     shl_nbass.push(nbas);
-    (data.keys().len(),shl_types,shl_nbass,shl_atoms,pm_alps,pm_coes,sp_coes)
+    (nshl, shl_types, shl_nbass, shl_atoms, pm_alps, pm_coes, sp_coes)
 }
 
 impl Writer for FchWriter {
-    fn from_mole(&mut self, mole: &crate::base::Mole) {
-        self.atoms=mole.atoms().clone();
-        self.basis=mole.basis().clone();
-        self.coefs=mole.coefs().clone();
+    fn read_mole(&mut self, mole: &crate::base::Mole) {
+        self.atoms = mole.atoms().clone();
+        self.basis = mole.basis().clone();
+        self.coefs = mole.coefs().clone();
     }
 }
 
-fn u2i(nums:&mut Vec<usize>){
-    for num in nums{
+fn u2i(nums: &mut Vec<usize>) {
+    for num in nums {
         *num as isize;
-    };
+    }
 }

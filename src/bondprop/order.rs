@@ -1,10 +1,11 @@
-use ndarray::{Array2, s};
+use ndarray::{Array2, Axis, s};
 use std::collections::HashMap;
 
-use crate::base::{Mole, Vec3};
-use crate::datas::consts::BOHR;
-use crate::orbtprop::obtmat::Mocv;
-use crate::{maths, orbtprop};
+use crate::base::{Mole, Stm, Vec3};
+use crate::integ::RsInt;
+use crate::maths::calc_dmat;
+// use crate::orbtprop::obtmat::Mocv;
+use crate::{atomprop, maths, orbtprop};
 
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
@@ -17,151 +18,191 @@ impl<'m> Calculator<'m> {
         Calculator { mole, atms }
     }
 
-    pub fn order(&self, otype: &str) -> Array2<f64> {
-        let smat = self.mole.basis().get_smat("sph", self.mole);
-        let dmat = self.mole.coefs().get_dmat("sph");
-        assert_eq!(smat.shape(), dmat.shape());
-        let uplo = self.mole.atoms().ato_uplo("sph", self.mole);
-        match otype {
-            "mayer" => mayer(dmat, smat, &uplo),
-            "lowdin" => lowdin(dmat, smat, &uplo),
-            "wiberg" => wiberg(dmat, &uplo),
-            _ => panic!("未知键级类型:{}", otype),
-        }
+    pub fn mayer(&self) -> Array2<f64> {
+        self.order("mayer")
     }
 
-    pub fn mayer_obt(&self, obt: usize) -> Array2<f64> {
-        let smat = self.mole.basis().get_smat("sph", self.mole);
-        let old_cmat = self.mole.coefs().get_cmat("sph");
+    pub fn wiberg(&self) -> Array2<f64> {
+        self.order("wiberg")
+    }
+
+    pub fn order(&self, otype: &str) -> Array2<f64> {
+        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
+        let dmat = self.mole.coefs().get_dmat("raw", self.mole.basis());
+        assert_eq!(smat.shape(), dmat.shape());
+        let uplo = self.mole.coefs().atm_uplo("raw", self.mole.basis());
+        let omat_ato = match otype {
+            "mayer" => mayer(dmat, smat),
+            "wiberg" => wiberg(dmat, smat),
+            _ => panic!("未知键级类型:{}", otype),
+        };
+        ato2atm(&omat_ato, uplo)
+    }
+
+    // 计算某个分子轨道的键级矩阵
+    pub fn order_obt(&self, otype: &str, iobt: usize) -> Array2<f64> {
+        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
+        let old_cmat = self.mole.coefs().get_cmat("raw", self.mole.basis());
         let nato = old_cmat.nrows();
         let nobt = old_cmat.ncols();
         let mut new_cmat = Array2::zeros((nato, nobt));
-        new_cmat.slice_mut(s![.., obt]).assign(&old_cmat.slice(s![.., obt]));
+        new_cmat.slice_mut(s![.., iobt]).assign(&old_cmat.slice(s![.., iobt]));
         let dmat = old_cmat.dot(&new_cmat.t());
-        let uplo = self.mole.atoms().ato_uplo("sph", self.mole);
-        mayer(&dmat, smat, &uplo)
+        let uplo = self.mole.coefs().atm_uplo("raw", self.mole.basis());
+        let omat_ato = match otype {
+            "mayer" => mayer(&dmat, smat),
+            "wiberg" => wiberg(&dmat, smat),
+            _ => panic!("未知键级类型:{}", otype),
+        };
+        ato2atm(&omat_ato, uplo)
     }
 
-    pub fn pocv(&self, dirs: &HashMap<usize, Vec3>, keep_other_atm: bool, keep_other_sym: bool, otype: &str) -> Array2<f64> {
+    pub fn pocv(
+        &self,
+        dirs: &HashMap<usize, Vec3>,
+        keep_other_atm: bool,
+        keep_other_sym: bool,
+        otype: &str,
+    ) -> Array2<f64> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
         let cmat_pocv = obt_caler.pocv(dirs, keep_other_atm, keep_other_sym);
 
         let mut mole_pocv = self.mole.clone();
-        mole_pocv.coefs.set_cmat("sph", &cmat_pocv);
+        let basis = mole_pocv.basis.as_ref().unwrap();
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, basis);
         let caler = Calculator::new(&mole_pocv);
         caler.order(otype)
     }
 
-    pub fn mocv(
-        &self,
-        mocvs: &HashMap<usize, Mocv>, // 每个原子的保留信息
-        otype: &str,
-    ) -> Array2<f64> {
+    pub fn mocv(&self, stms: &HashMap<usize, Stm>, atos: &Vec<usize>, otype: &str) -> Array2<f64> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
-        let cmat_mocv = obt_caler.mocv(mocvs);
-
+        let cmat_mocv = obt_caler.mocv(stms, atos);
         let mut mole_mocv = self.mole.clone();
-        mole_mocv.coefs.set_cmat("sph", &cmat_mocv);
+        let basis = mole_mocv.basis.as_ref().unwrap();
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, basis);
         let caler = Calculator::new(&mole_mocv);
         caler.order(otype)
     }
 
-    pub fn pi_pocv(&self) -> (HashMap<usize, Vec3>, Array2<f64>) {
+    pub fn pi_pocv(&self, otype: &str) -> (HashMap<usize, Vec3>, Array2<f64>) {
         let mut obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
         obt_caler.atms = self.atms;
         let (dirs, cmat_pocv) = obt_caler.pi_pocv();
 
         let mut mole_pocv = self.mole.clone();
-        mole_pocv.coefs.set_cmat("sph", &cmat_pocv);
+        let basis = mole_pocv.basis.as_ref().unwrap();
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, basis);
 
         let caler = Calculator::new(&mole_pocv);
-        let mut omat = caler.order("mayer");
-        omat = omat.abs().sqrt(); // 取绝对值再开根号
+        let mut omat = caler.order(otype);
+        omat = omat.abs().sqrt();
         (dirs, omat)
     }
 
-    pub fn pi_mocv(&self) -> (HashMap<usize, Mocv>, Array2<f64>) {
+    pub fn pi_mocv(&self, otype: &str) -> (HashMap<usize, Stm>, Vec<usize>, Array2<f64>) {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
-        let (mocvs, cmat_mocv) = obt_caler.pi_mocv();
+        let (stms, atos, cmat_mocv) = obt_caler.pi_mocv(1);
         let mut mole_mocv = self.mole.clone();
-        mole_mocv.coefs.set_cmat("sph", &cmat_mocv);
+        let basis = mole_mocv.basis.as_ref().unwrap();
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, basis);
         let caler = Calculator::new(&mole_mocv);
-        let mut omat = caler.order("mayer");
+        let mut omat = caler.order(otype);
         omat = omat.abs().sqrt(); // 取绝对值再开根号
-        (mocvs, omat)
+        (stms, atos, omat)
+    }
+
+    /// 键级分解 获得σ,pi和δ键级
+    pub fn decom(&self, atms: [usize; 2]) -> Vec<f64> {
+        let keep_ato_syms_plan = vec![vec!["S", "PZ", "D 0"], vec!["PX", "XZ", "D-1"], vec!["XY"]];
+        let keep_ato_syms_line = vec![
+            vec!["S", "PZ", "D 0"],
+            vec!["PX", "PY", "XZ", "YZ", "D+2", "D-2"],
+            vec!["XY", "D+2", "D-2"],
+        ];
+        let cmat_caler = orbtprop::obtmat::Calculator::new(self.mole);
+        let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
+        let natm = self.mole.atoms.len();
+        let mut stms = HashMap::new();
+        for i in 0..natm {
+            let stm = if i == atms[0] || i == atms[1] {
+                if i == atms[0] {
+                    dir_caler.LCS(i, Some(atms[1])).unwrap()
+                } else {
+                    dir_caler.LCS(i, Some(atms[0])).unwrap()
+                }
+            } else {
+                dir_caler.LCS(i, None).unwrap()
+            };
+            stms.insert(i, stm);
+        }
+        let int_caler = RsInt::new(self.mole.atoms(), self.mole.basis());
+        let [smat, _, _] = int_caler.mat1e_lcs(&stms, [1, 0, 0]);
+        let smat = int_caler.mat1e_raw(&smat);
+        let ato_syms = self.mole.basis().atos().syms("raw");
+        let nato = ato_syms.len();
+        let obt_occs = &self.mole.coefs().obt_occs;
+        let cmat_mocv = cmat_caler.mocv(&stms, &(0..nato).collect());
+        let dmat_mocv = calc_dmat(&cmat_mocv, obt_occs);
+        let uplo = self.mole.coefs().atm_uplo("raw", self.mole.basis());
+        let mut vals = vec![];
+        let keep_ato_syms = if self.mole.atoms().is_line(atms[0]) {
+            &keep_ato_syms_line
+        } else {
+            &keep_ato_syms_plan
+        };
+        for keep_syms in keep_ato_syms {
+            let mut atos = vec![];
+            for (idx, sym) in ato_syms.iter().enumerate() {
+                if keep_syms.contains(&sym.as_str()) {
+                    atos.push(idx);
+                }
+            }
+            log::info!("atos:{:?}", atos);
+            let omat = mayer(&dmat_mocv, &smat);
+            vals.push(omat[(atms[0], atms[1])]);
+        }
+        vals
     }
 
     /// 计算束缚键级
-    pub fn bound(&self, atm: usize, dir: &Vec3, otype: &str) -> (Vec<usize>, Vec<f64>) {
-        log::info!("计算束缚键级");
-        let mut dir_map = HashMap::new();
-        dir_map.insert(atm, dir.clone());
-
-        let omat = self.pocv(&dir_map, true, true, otype); // 获得键级矩阵
+    pub fn bound(&self, atm: usize, dir: &Vec3, nebs: &Vec<usize>, otype: &str) -> Vec<f64> {
+        let mut info = format!("计算束缚键级:{} {} {}\n", atm + 1, dir, otype);
+        let mut dirs = HashMap::new();
+        dirs.insert(atm, dir.clone());
+        let omat = self.pocv(&dirs, true, true, otype); // 获得键级矩阵
         let mut orders = Vec::new();
-        // let nebs = self.mole.atoms().nebs(atm);
-        // 使用距离小于5.5埃的键进行计算
-        let mut nebs = Vec::new();
-        for idx in self.mole.atoms().idxs() {
-            let dist = self.mole.atoms().dist(atm, *idx);
-            if dist < 5.5 * BOHR && *idx != atm {
-                nebs.push(*idx);
-            }
-        }
         for idx in nebs.iter() {
             let order = omat[(atm as usize, *idx as usize)];
-            log::info!("order.bound:{atm}-{idx}:{order}");
+            info.push_str(&format!("order.bound:{}->{}:{:>10.4}\n", atm + 1, idx + 1, order));
             orders.push(order);
         }
-
-        (nebs, orders)
+        log::info!("{}", info);
+        orders
     }
 }
 
-pub fn mayer(dmat: &Array2<f64>, smat: &Array2<f64>, uplo: &Vec<[usize; 2]>) -> Array2<f64> {
-    let natm = uplo.len();
+pub fn mayer(dmat: &Array2<f64>, smat: &Array2<f64>) -> Array2<f64> {
     let psmat = dmat.dot(smat);
-    let bomat = &psmat * &psmat.t();
-    let mut omat = Array2::zeros((natm, natm)); // 键级矩阵
-
-    for i in 0..natm {
-        let [ui, li] = uplo[i];
-        for j in 0..natm {
-            let [uj, lj] = uplo[j];
-            let order = bomat.slice(s![ui..li, uj..lj]).sum();
-            omat[(i, j)] = order;
-        }
-    }
-    omat
+    &psmat * &psmat.t()
 }
 
-pub fn wiberg(dmat: &Array2<f64>, uplo: &Vec<[usize; 2]>) -> Array2<f64> {
-    let p2mat = dmat * dmat;
-    let natm = uplo.len();
-    let mut omat = Array2::zeros((natm, natm));
-    for i in 0..natm {
-        let [ui, li] = uplo[i];
-        for j in 0..natm {
-            let [uj, lj] = uplo[j];
-            let order = p2mat.slice(s![ui..li, uj..lj]).sum();
-            omat[(i, j)] = order;
-        }
-    }
-    omat
-}
-
-pub fn lowdin(dmat: &Array2<f64>, smat: &Array2<f64>, uplo: &Vec<[usize; 2]>) -> Array2<f64> {
+/// Wiberg bond order analysis in Löwdin orthogonalized basis
+pub fn wiberg(dmat: &Array2<f64>, smat: &Array2<f64>) -> Array2<f64> {
     let smat_sqrt = maths::matrix_phalf(smat);
     let pmat_lowd = smat_sqrt.dot(dmat).dot(&smat_sqrt);
+    &pmat_lowd * &pmat_lowd
+}
+
+pub fn ato2atm(omat_ato: &Array2<f64>, uplo: &Vec<[usize; 2]>) -> Array2<f64> {
     let natm = uplo.len();
-    let mut omat = Array2::zeros((natm, natm));
+    let mut omat_atm = Array2::zeros((natm, natm));
     for i in 0..natm {
         let [ui, li] = uplo[i];
         for j in 0..natm {
             let [uj, lj] = uplo[j];
-            let order = pmat_lowd.slice(s![ui..li, uj..lj]).sum();
-            omat[(i, j)] = order;
+            let order = omat_ato.slice(s![ui..li, uj..lj]).sum();
+            omat_atm[(i, j)] = order;
         }
     }
-    omat
+    omat_atm
 }

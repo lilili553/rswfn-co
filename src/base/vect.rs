@@ -19,11 +19,19 @@ impl Vec3 {
     }
 
     pub fn from_arr(vec: [f64; 3]) -> Self {
-        Vec3::new(vec[0], vec[1], vec[2])
+        let x = vec[0];
+        let y = vec[1];
+        let z = vec[2];
+        assert!(!x.is_nan() && !y.is_nan() && !z.is_nan());
+        Vec3::new(x, y, z)
     }
 
     pub fn from_vec(vec: &Vec<f64>) -> Self {
-        Vec3::new(vec[0], vec[1], vec[2])
+        let x = vec[0];
+        let y = vec[1];
+        let z = vec[2];
+        assert!(!x.is_nan() && !y.is_nan() && !z.is_nan());
+        Vec3::new(x, y, z)
     }
 
     pub fn into_arr(&self) -> [f64; 3] {
@@ -65,10 +73,11 @@ impl Vec3 {
         self.x * vec3.x + self.y * vec3.y + self.z * vec3.z
     }
 
-    /// 两向量之间的角度 0-1 pi
+    /// 两向量之间的角度 0-PI
     pub fn angle(&self, vec3: &Vec3) -> f64 {
         let cos = self.dot(vec3) / (self.length() * vec3.length());
-        cos.acos() / PI
+        let cos = cos.max(-1.0).min(1.0);
+        cos.acos()
     }
 
     pub fn project_onto(&self, vec3: &Vec3) -> Vec3 {
@@ -82,9 +91,15 @@ impl Vec3 {
         let [dx, dy, dz] = axis.into_arr();
         let cos = angle.cos();
         let sin = angle.sin();
-        let x = px * (dx.powi(2) * (1.0 - cos) + cos) + py * (dx * dy * (1.0 - cos) - dz * sin) + pz * (dx * dz * (1.0 - cos) + dy * sin);
-        let y = px * (dx * dy * (1.0 - cos) + dz * sin) + py * (dy.powi(2) * (1.0 - cos) + cos) + pz * (dy * dz * (1.0 - cos) - dx * sin);
-        let z = px * (dx * dz * (1.0 - cos) - dy * sin) + py * (dy * dz * (1.0 - cos) + dx * sin) + pz * (dz.powi(2) * (1.0 - cos) + cos);
+        let x = px * (dx.powi(2) * (1.0 - cos) + cos)
+            + py * (dx * dy * (1.0 - cos) - dz * sin)
+            + pz * (dx * dz * (1.0 - cos) + dy * sin);
+        let y = px * (dx * dy * (1.0 - cos) + dz * sin)
+            + py * (dy.powi(2) * (1.0 - cos) + cos)
+            + pz * (dy * dz * (1.0 - cos) - dx * sin);
+        let z = px * (dx * dz * (1.0 - cos) - dy * sin)
+            + py * (dy * dz * (1.0 - cos) + dx * sin)
+            + pz * (dz.powi(2) * (1.0 - cos) + cos);
         Vec3::new(x, y, z)
     }
 
@@ -188,7 +203,14 @@ impl MulAssign<f64> for Vec3 {
 
 impl fmt::Display for Vec3 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({:>10.4}, {:>10.4}, {:>10.4}):{:>10.4}", self.x, self.y, self.z, self.length())?;
+        write!(
+            f,
+            "({:>10.4}, {:>10.4}, {:>10.4}):{:>10.4}",
+            self.x,
+            self.y,
+            self.z,
+            self.length()
+        )?;
         Ok(())
     }
 }

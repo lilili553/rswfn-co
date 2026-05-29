@@ -2,9 +2,9 @@
 use ndarray::Array2;
 use regex::Regex;
 
-use crate::base::{Atoms, Basis, BasisData, Coefs};
+use crate::base::{Atoms, Basis, Coefs};
 use crate::datas::elems::sym2atm;
-use crate::reader::{Reader, read_lines};
+use crate::reader::{Reader, read_lines, shl_basis, shl_forms};
 use std::collections::HashMap;
 use std::vec;
 
@@ -161,35 +161,37 @@ impl OutReader {
 }
 
 impl Reader for OutReader {
-    fn get_basis(&self) -> Basis {
-        let nlm = (0, 0, 0);
-        let mut basis = Basis::blank();
+    fn get_atoms(&self) -> Atoms {
+        let (syms, xyzs) = self.read_geome();
+        let atms: Vec<usize> = syms.iter().map(|sym| sym2atm(sym)).collect();
+        let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
+        Atoms::new(&atms, &xyzs, &crgs)
+    }
+
+    fn get_basis(&self) -> Option<Basis> {
+        let mut basis = Basis::new(vec![]);
         let data = self.read_basis();
         let syms = self.read_geome().0;
         let atms: Vec<usize> = syms.iter().map(|sym| sym2atm(sym)).collect();
         let mut datas = vec![];
         for (idx, atm) in atms.iter().enumerate() {
             for (shl, ang, alp, coe) in data.get(atm).unwrap().iter() {
-                let bscar = BasisData::new(idx, *shl as usize, *ang, *alp, *coe, nlm);
-                datas.push(bscar);
+                let data = (idx, *shl as usize, *ang, *alp, *coe);
+                datas.push(data);
             }
         }
-        basis.build(datas);
-        basis
+        let (ato_atms, ato_shls, ato_syms, _, _, cmat) = self.read_coefs();
+        let forms = shl_forms(&ato_atms, &ato_shls, &ato_syms);
+        let basis = shl_basis(&datas, &forms);
+        Some(basis)
     }
 
-    fn get_coefs(&self) -> Coefs {
+    fn get_coefs(&self) -> Option<Coefs> {
         let (ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat) = self.read_coefs();
-        let obt_occs = obt_occs.iter().map(|occ| *occ as usize).collect();
+        let obt_occs = obt_occs.iter().map(|occ| *occ).collect();
         let ato_syms = ato_syms.iter().map(|sym| sym2sym(sym)).collect();
-        Coefs::new(ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat)
-    }
-
-    fn get_atoms(&self) -> Atoms {
-        let (syms, xyzs) = self.read_geome();
-        let atms: Vec<usize> = syms.iter().map(|sym| sym2atm(sym)).collect();
-        let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-        Atoms::new(&atms, &xyzs, &crgs, None)
+        let coefs = Coefs::new(ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat);
+        Some(coefs)
     }
 }
 

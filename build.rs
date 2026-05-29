@@ -1,5 +1,5 @@
 fn main() {
-    #[cfg(all(feature = "use-c", target_env = "gnu"))]
+    #[cfg(all(feature = "use-cint", feature = "use-func"))]
     {
         let root_dir = format!("E:/code/rswfn");
         let libs_dir = format!("{}/libs", root_dir);

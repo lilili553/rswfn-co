@@ -3,11 +3,10 @@ use std::collections::HashMap;
 use crate::base::Coefs;
 use crate::datas::btrans::lmn2sym;
 // 实现HF方法，根据结构和基组信息，计算得到波函数
-use crate::integ::{Int_mat, Mat2e};
+use crate::integ::{Mat2e, RsInt};
 use crate::{atomprop, integ, maths};
 use crate::{base::Mole, utils};
 use ndarray::{Array1, Array2, Array4, s};
-use ndarray_linalg::{Eigh, UPLO};
 
 pub struct RHF<'m> {
     pub mole: &'m Mole,
@@ -94,7 +93,7 @@ impl<'m> RHF<'m> {
         println!("开始计算");
         // let map_ato = self.mole.basis().map_ato();
         // let nato = map_ato.len("car");
-        let ints = Int_mat::new(self.mole);
+        let ints = RsInt::new(self.mole.atoms(), self.mole.basis());
         let (mat1e, emat) = if self.use_lstm {
             println!("使用局部坐标系");
             let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
@@ -138,7 +137,7 @@ impl<'m> RHF<'m> {
         let mut cmat = {
             let hmat = &tmat + &vmat; // 核心哈密顿矩阵
             let fmat_ = xmat.dot(&hmat).dot(&xmat);
-            let (_engs, cmat_) = fmat_.eigh(UPLO::Lower).expect("矩阵对角化失败");
+            let (_engs, cmat_) = maths::eigh(&fmat_);
             xmat.dot(&cmat_)
         }; // 系数矩阵初猜
         let mut dmat = self.calc_rdmat(nela + nelb, &cmat); // 计算密度矩阵
@@ -148,7 +147,7 @@ impl<'m> RHF<'m> {
             dmat = 0.5 * dmat + 0.5 * self.calc_rdmat(nela + nelb, &cmat); // 计算密度矩阵
             let fmat = self.calc_rfork(nato, &tmat, &vmat, &dmat, &emat);
             let fmat_ = xmat.dot(&fmat).dot(&xmat);
-            let (_engs, cmat_) = fmat_.eigh(UPLO::Lower).expect("矩阵对角化失败");
+            let (_engs, cmat_) = maths::eigh(&fmat_);
             engs = _engs;
             // println!("engs:{:?}", engs.to_vec());
             cmat = xmat.dot(&cmat_);
@@ -161,14 +160,13 @@ impl<'m> RHF<'m> {
                 eng = _eng;
             }
         }
-        let map_ato = self.mole.basis.map_ato();
-        let atos = &map_ato.sphs;
+        let atos = &self.mole.basis().atos().sphs;
         let ato_atms = atos.iter().map(|ato| ato.atm).collect();
         let ato_shls = atos.iter().map(|ato| ato.shl).collect();
         let ato_syms = atos.iter().map(|ato| ato.sym.clone()).collect();
         let obt_engs = engs.to_vec();
         let nobt = cmat.ncols();
-        let obt_occs = [vec![1; nela], vec![0; nobt - nela]].concat();
+        let obt_occs = [vec![1.0; nela], vec![0.0; nobt - nela]].concat();
         let coefs = Coefs::new(ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat);
         // println!("coefs:\n{}", coefs);
         (eng, coefs)
@@ -253,8 +251,7 @@ impl<'m> UHF<'m> {
 
     // 计算开壳层的hf
     pub fn calc_uhf(&self) -> ([f64; 2], [Array1<f64>; 2], [Array2<f64>; 2]) {
-        let map_ato = self.mole.basis().map_ato();
-        let atos = &map_ato.sphs;
+        let atos = &self.mole.basis().atos().sphs;
         let nato = atos.len();
         let cmat_a = Array2::zeros((nato, nato));
         let cmat_b = Array2::zeros((nato, nato));
@@ -264,7 +261,7 @@ impl<'m> UHF<'m> {
         let dmat_b = Array2::zeros((nato, nato));
         let mut dmat = [dmat_a, dmat_b];
 
-        let rs_int = integ::Int_mat::new(self.mole);
+        let rs_int = integ::RsInt::new(self.mole.atoms(), self.mole.basis());
         let [smat, tmat, vmat] = rs_int.mat1e([1, 1, 1], "car");
         let emat = rs_int.mat2e("car");
 
@@ -284,7 +281,7 @@ impl<'m> UHF<'m> {
             for c in 0..2usize {
                 let slice = &fmat[c];
                 let fmat_ = xmat.dot(slice).dot(&xmat);
-                let (_engs, _cmat) = fmat_.eigh(UPLO::Lower).expect("矩阵对角化失败");
+                let (_engs, _cmat) = maths::eigh(&fmat_);
                 obt_engs[c] = _engs;
                 cmat[c] = xmat.dot(&_cmat);
             }

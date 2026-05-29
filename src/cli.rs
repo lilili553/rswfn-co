@@ -1,92 +1,78 @@
-use std::io;
+use clap::{Parser, Subcommand, command};
+use std::path::{PathBuf, absolute};
 
 use crate::base::Mole;
+use crate::reader::{GjfReader, LogReader};
+use crate::tests;
+use crate::writer::{DmoWriter, GjfWriter, Writer};
+use crate::{qmcalc, utils};
 
-use crate::atomprop;
-use crate::bondprop;
-use crate::gridprop;
-use crate::writer::CubWriter;
-
-fn input(tip: &str) -> String {
-    print!("{}", tip);
-    let mut txt = String::new();
-    io::stdin().read_line(&mut txt).expect("无法读取输入");
-    txt
+#[derive(Parser, Debug)]
+#[command(author = "石小飞", about = "波函数分析程序")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
 }
 
-pub struct Main {
-    path: String,
+#[derive(Subcommand, Debug)]
+enum Commands {
+    Trans { input: PathBuf, output: PathBuf },
+    Dmo { input: PathBuf, output: Option<PathBuf> },
+    Test,
 }
 
-impl Main {
-    pub fn new() -> Self {
-        println!("欢迎使用rswfn: 基于rust的波函数分析工具");
-        let path = input("请输入文件路径: ");
-        Self { path }
-    }
-
-    pub fn atom_prop() {
-        AtomProp {}.main();
-    }
-
-    pub fn bond_prop() {}
-
-    pub fn grid_prop() {}
-}
-
-struct AtomProp {}
-
-impl AtomProp {
-    pub fn main(&self) {
-        loop {
-            println!("1.电子布局");
-            println!("2.原子活性");
-            let opt = input("请输入选项: ");
-            match opt.trim() {
-                "1" => self.atom_charge(),
-                "2" => {}
-                _ => break,
+pub fn main() {
+    let cli = Cli::parse();
+    match &cli.command {
+        Commands::Trans { input, output } => {
+            let from = absolute(input).expect("输入文件转换失败");
+            let dest = absolute(output).expect("输出文件转换失败");
+            let from_path = from.to_str().expect("准换字符串失败");
+            let dest_path = dest.to_str().expect("准换字符串失败");
+            let from_type = utils::file_type(from_path);
+            let dest_type = utils::file_type(dest_path);
+            let dest_name = utils::file_name(dest_path);
+            println!("{} -> {}", from_type, dest_type);
+            match (from_type.as_str(), dest_type.as_str()) {
+                ("log" | "out", "gjf") => {
+                    let reader = LogReader::new(&from_path);
+                    let mole = Mole::from_read(&reader);
+                    let job = reader.read_job();
+                    let mut writer = GjfWriter::new();
+                    writer.read_mole(&mole);
+                    writer.job = job.to_owned();
+                    writer.chk = dest_name;
+                    writer.charge = reader.charge as isize;
+                    writer.multip = reader.multip as usize;
+                    writer.save(&dest_path);
+                    println!("文件转换成功 >_< ");
+                }
+                ("gjf", "dmi") => {
+                    let reader = GjfReader::new(&from_path);
+                    let mole = Mole::from_read(&reader);
+                    let mut writer = DmoWriter::blank();
+                    writer.read_mole(&mole);
+                    writer.save(&dest_path);
+                    println!("文件转换成功 >_< ");
+                }
+                _ => panic!("不支持的转换类型!!"),
             }
         }
-    }
-
-    pub fn atom_charge(&self) {}
-}
-
-struct BondProp {}
-
-struct GridProp {}
-impl GridProp {
-    pub fn main(&self, mole: &Mole) {
-        let mut grid_caler = gridprop::CubeGrid::new();
-        let [p0, p1] = mole.border();
-        grid_caler.set_v1(&p0, &p1, 0.2, 4.0);
-        let (shape, grids) = grid_caler.get();
-        println!("1.分子轨道");
-        println!("2.电子密度");
-        let opt = input("请输入选项: ");
-        let vals = match opt.trim() {
-            "1" => {
-                let obt: usize = input("输入轨道序号: ").parse().expect("轨道序号错误");
-                let caler = gridprop::wfnfunc::Calculator::new(mole);
-                let vals = grids.iter().map(|grid| caler.obt_wfn(obt, grid, 0).0).collect();
-                vals
-            }
-            "2" => {
-                let caler = gridprop::density::Calculator::new(mole);
-                let vals: Vec<f64> = grids.iter().map(|grid| caler.mol_rho_cm(grid, 0).0).collect();
-                vals
-            }
-            _ => return,
-        };
-        let mut cub_writer = CubWriter::new("new.cub");
-        cub_writer.pos0 = p0;
-        cub_writer.step = [0.2; 3];
-        cub_writer.size = shape;
-        cub_writer.xyzs = mole.atoms().xyzs().clone();
-        cub_writer.syms = mole.atoms().syms().clone();
-        cub_writer.obts = vec![-1];
-        cub_writer.vals = Vec::from([vals]);
-        cub_writer.save();
+        Commands::Dmo { input, output } => {
+            let from = absolute(input).expect("输入文件转换失败").to_str().expect("转换字符串失败").to_owned();
+            let dest = match output {
+                Some(output) => {
+                    let dest = absolute(output).expect("输出文件转换失败");
+                    let dest = dest.to_str().expect("转换字符串失败").to_owned();
+                    Some(dest)
+                }
+                None => None,
+            };
+            qmcalc::dhmo::output(&from, dest);
+            println!("DHMO计算完成 >_< ");
+        }
+        Commands::Test => {
+            tests::test();
+        }
     }
 }

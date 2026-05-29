@@ -69,7 +69,7 @@ impl Tool {
                 let atm = atms[i];
                 let xyz = xyzs[i];
                 let sym = elems::atm2sym(atm);
-                geomeStr += &format!("{:<12}{:>16.8}{:>16.8}{:>16.8}\n", sym, xyz[0] * BOHR, xyz[1] * BOHR, xyz[2] * BOHR);
+                geomeStr += &format!("{:<12}{:>16.8}{:>16.8}{:>16.8}\n", sym, xyz[0] / BOHR, xyz[1] / BOHR, xyz[2] / BOHR);
             }
             geomeStr = geomeStr.trim_end_matches("\n").to_string();
             temp = temp.replace("{geome}", &geomeStr);

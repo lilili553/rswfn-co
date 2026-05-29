@@ -25,7 +25,7 @@ impl<'m> Calculator<'m> {
         caler.vobt = true;
         caler.atms = self.atms;
         let (_, cmat) = caler.pi_pocv();
-        let smat = self.mole.basis().get_smat("sph", self.mole);
+        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
         let mut eles = Vec::new();
         let nobt = cmat.ncols();
         let k = if self.mole.is_open() { 1.0 } else { 2.0 };
@@ -49,13 +49,13 @@ impl<'m> Calculator<'m> {
             }
         }
         let cmat_caler = orbtprop::obtmat::Calculator::new(self.mole);
-        let smat_caler = integ::Int_mat::new(self.mole);
+        let smat_caler = integ::RsInt::new(self.mole.atoms(), self.mole.basis());
         let cmat = cmat_caler.ldao(&stms); // 局部坐标系的分子轨道
-        let smat = self.mole.basis().get_smat("car", self.mole);
+        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
         let smat_half = maths::matrix_phalf(&smat);
         let k = if self.mole.is_open() { 1.0 } else { 2.0 };
         let mut eles = Vec::new();
-        let syms = self.mole.coefs().ato_syms("car");
+        let syms = self.mole.basis().atos().syms("raw");
         let mut ipzs = vec![false; syms.len()];
         for (i, sym) in syms.iter().enumerate() {
             if sym.to_string().as_str() == "PZ" {
@@ -95,8 +95,8 @@ impl<'m> Calculator<'m> {
         // caler.vobt = true;
         // let atms = self.mole.atoms().idxs();
         // let (dirs, cmat) = caler.pi_pocv(atms);
-        let cmat = self.mole.coefs().get_cmat("sph");
-        let smat = self.mole.basis().get_smat("sph", self.mole);
+        let cmat = self.mole.coefs().get_cmat("sph", self.mole.basis());
+        let smat = self.mole.basis().get_smat("sph", self.mole.atoms());
         let mut eles = Vec::new();
         let nobt = cmat.ncols();
         let k = if self.mole.is_open() { 1.0 } else { 2.0 };

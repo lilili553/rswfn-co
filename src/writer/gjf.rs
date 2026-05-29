@@ -27,7 +27,7 @@ impl GjfWriter {
         for i in 0..self.syms.len() {
             let sym = &self.syms[i];
             let [x, y, z] = &self.xyzs[i];
-            geom += &format!("{:>3}           {:>14.8}{:>14.8}{:>14.8}\n", sym, x * BOHR, y * BOHR, z * BOHR);
+            geom += &format!("{:>3}           {:>14.8}{:>14.8}{:>14.8}\n", sym, x / BOHR, y / BOHR, z / BOHR);
         }
         temps::GJF.to_string().replace("{chk}", &self.chk).replace("{job}", &self.job).replace("{ele.0}", format!("{:>2}", self.charge).as_str()).replace("{ele.1}", format!("{:>2}", self.multip).as_str()).replace("{geome}", &geom).to_string()
     }
@@ -39,7 +39,7 @@ impl GjfWriter {
 }
 
 impl Writer for GjfWriter {
-    fn from_mole(&mut self, mole: &crate::base::Mole) {
+    fn read_mole(&mut self, mole: &crate::base::Mole) {
         let syms = mole.atoms.syms();
         let xyzs = mole.atoms.xyzs();
         self.charge = mole.charge();

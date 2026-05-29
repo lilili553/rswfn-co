@@ -18,7 +18,10 @@ pub struct LineGrid {
 
 impl LineGrid {
     pub fn new() -> LineGrid {
-        LineGrid { shape: [0], grids: vec![] }
+        LineGrid {
+            shape: [0],
+            grids: vec![],
+        }
     }
 
     pub fn set(&mut self, p0: &Vec3, p1: &Vec3, step: f64) {
@@ -48,13 +51,19 @@ pub struct RectGrid {
 
 impl RectGrid {
     pub fn new() -> Self {
-        RectGrid { shape: [0, 0], grids: vec![] }
+        RectGrid {
+            shape: [0, 0],
+            grids: vec![],
+        }
     }
 
     pub fn set_v1(&mut self, center: &Vec3, normal: &Vec3, vector: &Vec3, size: [f64; 2], step: [f64; 2]) {
         let vz = normal.normalize();
         let vx = vector.normalize();
-        let shape = [(size[0] / step[0] + EPSILON).floor() as usize + 1, (size[1] / step[1] + EPSILON).floor() as usize + 1];
+        let shape = [
+            (size[0] / step[0] + EPSILON).floor() as usize + 1,
+            (size[1] / step[1] + EPSILON).floor() as usize + 1,
+        ];
 
         let vy = vx.cross(&vz).normalize();
         let vx = vz.cross(&vy).normalize();
@@ -149,7 +158,6 @@ pub struct CubeGrid {
 impl CubeGrid {
     pub fn new() -> Self {
         let shape = [0, 0, 0];
-        // let grids = vec![];
         let start = [0.0, 0.0, 0.0];
         let steps = [0.0, 0.0, 0.0];
         CubeGrid { shape, start, steps }
@@ -184,5 +192,34 @@ impl CubeGrid {
             }
         }
         (self.shape, grids)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct GridVals {
+    pub val0: f64,
+    pub val1: [f64; 3],
+    pub val2: [[f64; 3]; 3],
+}
+
+impl GridVals {
+    pub fn new(val0: f64, val1: [f64; 3], val2: [[f64; 3]; 3]) -> Self {
+        GridVals { val0, val1, val2 }
+    }
+
+    pub fn non() -> Self {
+        GridVals::new(0.0, [0.0; 3], [[0.0; 3]; 3])
+    }
+
+    pub fn grad_norm(&self) -> f64 {
+        let [gx, gy, gz] = self.val2;
+        let norm = (gx[0].powi(2) + gy[0].powi(2) + gz[0].powi(2)).sqrt();
+        norm
+    }
+
+    pub fn grad_norm2(&self) -> f64 {
+        let [gx, gy, gz] = self.val2;
+        let norm2 = (gx[0].powi(2) + gy[0].powi(2) + gz[0].powi(2));
+        norm2
     }
 }

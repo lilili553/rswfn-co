@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
+use cached::proc_macro::cached;
 use ndarray::{Array2, s};
-use ndarray_linalg::Inverse;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -19,7 +19,11 @@ pub struct Calculator<'m> {
 impl<'m> Calculator<'m> {
     pub fn new(mole: &'m Mole) -> Self {
         let atms = mole.atoms().idxs();
-        Calculator { mole: mole, vobt: false, atms: atms }
+        Calculator {
+            mole: mole,
+            vobt: false,
+            atms: atms,
+        }
     }
 
     pub fn pocv(
@@ -29,18 +33,22 @@ impl<'m> Calculator<'m> {
         keep_other_sym: bool,        //是否保留其它类型的轨道
     ) -> Array2<f64> {
         let atoms = self.mole.atoms();
-        let uls = atoms.ato_uplo("sph", self.mole);
+        let uls = self.mole.coefs().atm_uplo("raw", self.mole.basis());
         let mut atms: Vec<usize> = dirs.keys().cloned().collect();
         atms.sort_by(|x, y| x.cmp(y));
-        let cmat_raw = self.mole.coefs().get_cmat("sph");
+        let cmat_raw = self.mole.coefs().get_cmat("raw", self.mole.basis());
         let [nato, nobt] = cmat_raw.shape().try_into().expect("获取矩阵形状失败");
         // 初始化投影的分子轨道
         let mut cmat_pocv: Array2<f64> = Array2::zeros([nato, nobt]);
 
-        let ato_atms = self.mole.coefs().ato_atms("sph");
-        let ato_syms = self.mole.coefs().ato_syms("sph");
+        let ato_atms = self.mole.basis().atos().atms("raw");
+        let ato_syms = self.mole.basis().atos().syms("raw");
 
-        let obts = if self.vobt { &(0..nobt).into_iter().collect() } else { self.mole.coefs().obt_idxs(true) }; // 占据轨道的索引
+        let obts = if self.vobt {
+            &(0..nobt).into_iter().collect()
+        } else {
+            self.mole.coefs().obt_idxs(true)
+        }; // 占据轨道的索引
         for obt in obts.iter() {
             for ato in 0..nato {
                 let atm = &ato_atms[ato];
@@ -58,7 +66,7 @@ impl<'m> Calculator<'m> {
         }
 
         let mut pidxs = Vec::new(); // p轨道的索引
-        let ato_syms = self.mole.coefs().ato_syms("sph");
+        let ato_syms = self.mole.basis().atos().syms("raw");
 
         assert_eq!(uls.len(), atoms.len(), "原子再轨道内索引的数量");
 
@@ -66,7 +74,6 @@ impl<'m> Calculator<'m> {
             let [u, l] = uls[*atm as usize];
             for ato in u..l {
                 let ato_sym = &ato_syms[ato];
-                println!("atm:{},ato:{},sym:{}", atm + 1, ato + 1, ato_sym);
                 if ato_sym.contains("P") {
                     pidxs.push([*atm as usize, ato]);
                 }
@@ -98,7 +105,6 @@ impl<'m> Calculator<'m> {
             if atoms.get(*atm).sym == "H" {
                 continue;
             }
-            println!("atm:{},nebs:{:?}", atm + 1, atoms.nebs(*atm));
             match dir_caler.normal_vector(*atm) {
                 Some(dir) => {
                     dirs.insert(*atm, dir);
@@ -111,82 +117,52 @@ impl<'m> Calculator<'m> {
     }
 
     /// 轨道映射法，需要使用笛卡尔类型原子轨道
-    pub fn mocv(&self, mocvs: &HashMap<usize, Mocv>) -> Array2<f64> {
-        let ato_syms = self.mole.coefs().ato_syms("sph");
-        let ato_atms = self.mole.coefs().ato_atms("sph");
-        let cmat_sph = self.mole.coefs().get_cmat("sph");
-        let [nrow, ncol] = cmat_sph.shape().try_into().expect("获取矩阵形状失败");
-        let mut cmat_mocv = Array2::zeros([nrow, ncol]);
-        // 各种类型轨道的行索引
-        let mut sidx = Vec::new();
-        let mut pidx = Vec::new();
-        let mut didx = Vec::new();
-        let mut fidx = Vec::new();
-        // 获取每种类型轨道的索引
-        for (i, sym) in ato_syms.iter().enumerate() {
-            if datas::btrans::MIX_S_SYMS.contains(&sym.as_str()) {
-                sidx.push(i);
-                continue;
-            }
-            if datas::btrans::MIX_P_SYMS.contains(&sym.as_str()) {
-                pidx.push(i);
-                continue;
-            }
-            if datas::btrans::SPH_D_SYMS.contains(&sym.as_str()) {
-                didx.push(i);
-                continue;
-            }
-            if datas::btrans::SPH_F_SYMS.contains(&sym.as_str()) {
-                fidx.push(i);
-                continue;
-            }
+    pub fn mocv(&self, stms: &HashMap<usize, Stm>, atos: &Vec<usize>) -> Array2<f64> {
+        let ato_syms = self.mole.basis().atos().syms("raw");
+        let ato_atms = self.mole.basis().atos().atms("raw");
+        let nato = ato_syms.len();
+        if atos.len() == 0 {
+            log::warn!("mocv:原子轨道长度为0");
+            return Array2::zeros((nato, nato));
         }
-        let atms: Vec<usize> = mocvs.keys().copied().collect();
-        // 对每种类型分别处理
-        for ato in sidx.iter() {
-            // S轨道的索引
-            let atm = ato_atms[*ato];
-            if !atms.contains(&atm) {
-                continue;
-            }
-            if mocvs.get(&atm).expect("mocvs获取atm失败").skeep[0] == 1 {
-                // 如果保留S轨道
-                let rcoefs: Array2<f64> = cmat_sph.slice(s![*ato..*ato + 0, ..]).to_owned();
-                cmat_mocv.slice_mut(s![*ato, ..]).assign(&rcoefs);
-            }
+        let cmat_raw = self.mole.coefs().get_cmat("raw", self.mole.basis());
+        let nato = cmat_raw.nrows();
+        let nobt = cmat_raw.ncols();
+        let mut cmat_mocv = Array2::zeros([nato, nobt]);
+
+        let mut ato_keeps = vec![0; nato];
+        for ato in atos {
+            ato_keeps[*ato] = 1;
         }
-        for ato in pidx.iter().step_by(3) {
-            // P轨道的索引
-            let atm = ato_atms[*ato];
-            if !atms.contains(&atm) {
+
+        let shls = &self.mole.basis().shls;
+        let uplo = shls.uplo("raw");
+
+        assert_eq!(shls.len(), uplo.len());
+        for i in 0..shls.len() {
+            let shl = shls.get(i);
+            let atm = shl.atm;
+            let ang = shl.ang;
+            // 没有局部坐标系的原子跳过
+            if !stms.contains_key(&atm) {
                 continue;
             }
-            let pkeep: Vec<f64> = mocvs.get(&atm).expect("mocvs获取atm失败").pkeep.iter().map(|x| *x as f64).collect();
-            let pkeep = Array2::from_shape_vec((3, 1), pkeep).expect("生成矩阵失败");
-            let rcoefs: Array2<f64> = cmat_sph.slice(s![*ato..*ato + 3, ..]).to_owned();
-            let T = &mocvs.get(&atm).expect("mocvs获取atm失败").stm.mat;
-            let tcoefs = mocv(T, &rcoefs, &pkeep);
-            cmat_mocv.slice_mut(s![*ato..*ato + 3, ..]).assign(&tcoefs);
-        }
-        for ato in didx.iter().step_by(5) {
-            // D轨道的索引
-            let atm = ato_atms[*ato];
-            if !atms.contains(&atm) {
-                continue;
-            }
-            let dkeep: Vec<f64> = mocvs.get(&atm).expect("mocvs获取atm失败").dkeep.iter().map(|x| *x as f64).collect();
-            let dkeep = Array2::from_shape_vec((5, 1), dkeep).expect("生成矩阵失败");
-            let rcoefs: Array2<f64> = cmat_sph.slice(s![*ato..*ato + 5, ..]).to_owned();
-            let L = &mocvs.get(&atm).expect("mocvs获取atm失败").stm.mat;
-            let tcoefs = mocv(L, &rcoefs, &dkeep);
-            cmat_mocv.slice_mut(s![*ato..*ato + 5, ..]).assign(&tcoefs);
+
+            let [up, lo] = uplo[i];
+            let ato_keep = ato_keeps[up..lo].to_vec();
+            let keeps: Vec<f64> = (0..lo - up).map(|i| if ato_keep[i] == 1 { 1.0 } else { 0.0 }).collect();
+            let keeps = Array2::from_shape_vec((lo - up, 1), keeps).unwrap();
+            let rcoefs = cmat_raw.slice(s![up..lo, ..]).to_owned(); // 原始的系数
+            let L = &stms[&atm].mat;
+            let tcoefs = mocv(L, &rcoefs, &keeps);
+            cmat_mocv.slice_mut(s![up..lo, ..]).assign(&tcoefs);
         }
         cmat_mocv
     }
 
-    pub fn pi_mocv(&self) -> (HashMap<usize, Mocv>, Array2<f64>) {
+    pub fn pi_mocv(&self, dest: usize) -> (HashMap<usize, Stm>, Vec<usize>, Array2<f64>) {
         let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
-        let mut mocvs = HashMap::new();
+        let mut stms = HashMap::new();
         let atoms = self.mole.atoms();
         for i in 0..atoms.len() {
             if atoms.get(i as usize).nuc == 1 {
@@ -194,38 +170,32 @@ impl<'m> Calculator<'m> {
             }
             let stm = match dir_caler.LCS(i as usize, None) {
                 Some(stm) => stm,
-                None => dir_caler.RLCS(i as usize),
+                None => {
+                    log::warn!("原子{}没有局部坐标系，使用随机坐标系", i);
+                    dir_caler.RLCS(i as usize)
+                } // 如果有局部坐标系的话使用局部坐标系否则使用随机座标系？
             };
-            let mocv = match atoms.is_line(i) {
-                true => Mocv::pi_line(stm),
-                false => Mocv::pi_plan(stm),
-            };
-            // let mut mocv = Mocv { stm: stm, skeep: [0], pkeep: [0, 0, 1], dkeep: [0, 0, 0, 1, 0] }; // 加上ZZ，D保留三个成分
-            // if atoms.is_line(i as usize) {
-            //     mocv.pkeep = [0, 0, 1] // 临时改
-            // }
-            mocvs.insert(i as usize, mocv);
+            stms.insert(i as usize, stm);
         }
-
-        let cmat = self.mocv(&mocvs);
-        (mocvs, cmat)
+        let mut ato_idxs = mocv_atos(self.mole, dest);
+        log::info!("选择原子轨道索引:{:?}", ato_idxs);
+        let cmat = self.mocv(&stms, &ato_idxs);
+        (stms, ato_idxs, cmat)
     }
 
     // 原子局部坐标系的分子轨道系数矩阵
     pub fn ldao(&self, stms: &HashMap<usize, Stm>) -> Array2<f64> {
-        let map_shl = self.mole.basis().map_shl();
-        let shls = &map_shl.shls;
-        let cmat_mole = self.mole.coefs().get_cmat("car").clone();
+        let shls = &self.mole.basis().shls;
+        let cmat_mole = self.mole.coefs().get_cmat("car", self.mole.basis()).clone();
         let mut cmat_ldao = cmat_mole.clone();
-        // let atms = &map_shl.atms;
-        let uplo = map_shl.uplo("car");
-        let nshl = map_shl.len();
+        let uplo = shls.uplo("car");
+        let nshl = shls.len();
         for i in 0..nshl {
-            // let key = keys[i];
             let [up, lo] = uplo[i];
-            let atm = shls[i].atm;
+            let atm = shls.get(i).atm;
             if stms.contains_key(&atm) {
-                let tmat = mocv::get_tmat_car(lo - up, &stms[&atm].mat).t().inv().unwrap();
+                let tmat = mocv::get_tmat_car(lo - up, &stms[&atm].mat).t().to_owned();
+                let tmat = maths::inv(&tmat);
                 let info = s![up..lo, ..];
                 let coefs = cmat_mole.slice(info);
                 cmat_ldao.slice_mut(info).assign(&tmat.dot(&coefs));
@@ -237,10 +207,10 @@ impl<'m> Calculator<'m> {
     }
     // 轨道定域化
     pub fn LMO(&self) {
-        let mut cmat = self.mole.coefs().get_cmat("sph").to_owned();
-        let smat = self.mole.basis().get_smat("sph", self.mole).to_owned();
+        let mut cmat = self.mole.coefs().get_cmat("raw", self.mole.basis()).to_owned();
+        let smat = self.mole.basis().get_smat("raw", self.mole.atoms()).to_owned();
         let natm = self.mole.atoms().len();
-        let uplo = self.mole.atoms().ato_uplo("sph", self.mole);
+        let uplo = self.mole.coefs().atm_uplo("raw", self.mole.basis());
         // let [nato, nobt] = cmat.shape().try_into().expect("获取矩阵形状失败");
         let obts = self.mole.coefs().obt_idxs(true);
         let nobt = obts.len();
@@ -306,73 +276,136 @@ impl<'m> Calculator<'m> {
 
 pub fn mocv(L: &Array2<f64>, rcoefs: &Array2<f64>, keeps: &Array2<f64>) -> Array2<f64> {
     let nrow = rcoefs.nrows();
-    let Mi = mocv::get_tmat_sph(nrow, L);
-    let Mi = Mi.t();
-    let Mt = Mi.inv().expect("矩阵求逆失败");
+    let Mi = if [1, 3, 5, 7, 9].contains(&nrow) {
+        mocv::get_tmat_sph(nrow, L)
+    } else {
+        mocv::get_tmat_car(nrow, L)
+    };
+    // let Mi = mocv::get_tmat_sph(nrow, L);
+    let Mi = Mi.t().to_owned();
+    let Mt = maths::inv(&Mi);
     let mut tcoefs = Mt.dot(rcoefs); //全局系数映射到局部坐标系
     tcoefs = &tcoefs * keeps; // 保留某个维度
     let fcoefs = Mi.dot(&tcoefs); // 再映射回全局坐标系
     fcoefs
 }
 
-#[derive(Debug, Clone)]
-pub struct Mocv {
-    pub stm: Stm, // 每一列是一个方向
-    pub skeep: [usize; 1],
-    pub pkeep: [usize; 3],
-    pub dkeep: [usize; 5],
+// #[derive(Debug, Clone)]
+// pub struct Mocv {
+//     pub stm: Stm, // 每一列是一个方向
+//     pub skeep: [usize; 1],
+//     pub pkeep: [usize; 3],
+//     pub dkeep: [usize; 5],
+// }
+
+// impl Mocv {
+//     pub fn new(stm: Stm, skeep: [usize; 1], pkeep: [usize; 3], dkeep: [usize; 5]) -> Self {
+//         Self {
+//             stm,
+//             skeep,
+//             pkeep,
+//             dkeep,
+//         }
+//     }
+
+//     pub fn pi_plan(stm: Stm) -> Self {
+//         let skeep = [0];
+//         let pkeep = [0, 0, 1];
+//         let dkeep = [0, 1, 0, 1, 0];
+//         Mocv::new(stm, skeep, pkeep, dkeep)
+//     }
+
+//     pub fn pi_line(stm: Stm) -> Self {
+//         let skeep = [0];
+//         let pkeep = [0, 0, 1];
+//         let dkeep = [0, 0, 0, 1, 0];
+//         Mocv::new(stm, skeep, pkeep, dkeep)
+//     }
+
+//     pub fn dirs(&self) -> [[f64; 3]; 3] {
+//         let stm = &self.stm;
+//         [stm.ex, stm.ey, stm.ez]
+//     }
+// }
+
+// impl fmt::Display for Mocv {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         let ds = ["dx", "dy", "dz"];
+//         write!(f, "\n")?;
+//         for j in 0..3 {
+//             write!(f, "{}:", ds[j])?;
+//             for i in 0..3 {
+//                 write!(f, "{:>10.4}", self.stm.mat[(i, j)])?;
+//             }
+//             write!(f, "\n")?;
+//         }
+//         writeln!(f, "s:{:>3}", self.skeep[0])?;
+
+//         write!(f, "p:")?;
+//         for i in 0..3 {
+//             write!(f, "{:>3}", self.pkeep[i])?;
+//         }
+//         write!(f, "\n")?;
+
+//         write!(f, "d:")?;
+//         for i in 0..self.dkeep.len() {
+//             write!(f, "{:>3}", self.dkeep[i])?;
+//         }
+//         write!(f, "\n")?;
+
+//         Ok(())
+//     }
+// }
+
+/// dest：计算目标，可以为 0:popul 或 1:order
+pub fn mocv_atos(mole: &Mole, dest: usize) -> Vec<usize> {
+    let mut atos = vec![];
+    let ato_syms = mole.basis().atos().syms("raw");
+    let ato_atms = mole.basis().atos().atms("raw");
+
+    let mut atm_syms = HashMap::new();
+    let natm = mole.atoms.len();
+    for i in 0..natm {
+        let nebs = mole.atoms.nebs(i);
+        if nebs.len() == 1 && mole.atoms.nebs(nebs[0]).len() != 1 {
+            atm_syms.insert(i, vec!["PX".to_string(), "XZ".to_string()]);
+            continue;
+        }
+        let geom = if mole.atoms.is_line(i) { 1 } else { 0 };
+        let syms = mocv_syms(dest, geom);
+        atm_syms.insert(i, syms);
+    }
+    let nato = ato_syms.len();
+    let ato_locs = mole.basis().atos().locs("raw");
+    for i in 0..nato {
+        let atm = ato_atms[i];
+        let sym = &ato_syms[i];
+        let keeps = atm_syms.get(&atm).unwrap();
+        if keeps.contains(sym) {
+            atos.push(i);
+        }
+    }
+    atos
 }
 
-impl Mocv {
-    pub fn new(stm: Stm, skeep: [usize; 1], pkeep: [usize; 3], dkeep: [usize; 5]) -> Self {
-        Self { stm, skeep, pkeep, dkeep }
-    }
-
-    pub fn pi_plan(stm: Stm) -> Self {
-        let skeep = [0];
-        let pkeep = [0, 0, 1];
-        let dkeep = [0, 1, 0, 1, 0];
-        Mocv::new(stm, skeep, pkeep, dkeep)
-    }
-
-    pub fn pi_line(stm: Stm) -> Self {
-        let skeep = [0];
-        let pkeep = [0, 0, 1];
-        let dkeep = [0, 0, 0, 1, 0];
-        Mocv::new(stm, skeep, pkeep, dkeep)
-    }
-
-    pub fn dirs(&self) -> [[f64; 3]; 3] {
-        let stm = &self.stm;
-        [stm.ex, stm.ey, stm.ez]
-    }
-}
-
-impl fmt::Display for Mocv {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ds = ["dx", "dy", "dz"];
-        write!(f, "\n")?;
-        for j in 0..3 {
-            write!(f, "{}:", ds[j])?;
-            for i in 0..3 {
-                write!(f, "{:>10.4}", self.stm.mat[(i, j)])?;
-            }
-            write!(f, "\n")?;
+/// dest：计算目标，可以为 0:popul 或 1:order
+/// geom：几何类型，可以为 0:plan 或 1:line
+#[cached]
+fn mocv_syms(dest: usize, geom: usize) -> Vec<String> {
+    let syms = match (dest, geom) {
+        (0, 0) => {
+            vec!["PX", "XZ", "XY"]
         }
-        writeln!(f, "s:{:>3}", self.skeep[0])?;
-
-        write!(f, "p:")?;
-        for i in 0..3 {
-            write!(f, "{:>3}", self.pkeep[i])?;
+        (0, 1) => {
+            vec!["PX", "PY", "XZ", "YZ", "D+2", "D-2"]
         }
-        write!(f, "\n")?;
-
-        write!(f, "d:")?;
-        for i in 0..6 {
-            write!(f, "{:>3}", self.dkeep[i])?;
+        (1, 0) => {
+            vec!["PX", "XZ"]
         }
-        write!(f, "\n")?;
-
-        Ok(())
-    }
+        (1, 1) => {
+            vec!["PX", "PY", "XZ", "YZ", "D+2", "D-2"]
+        }
+        _ => vec![],
+    };
+    syms.into_iter().map(|sym| sym.to_string()).collect()
 }

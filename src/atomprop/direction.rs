@@ -20,7 +20,11 @@ impl<'m> Calculator<'m> {
     pub fn new(mole: &'m Mole) -> Self {
         // let rand_vz = maths::rand_vect();
         let rand_vz = Vec3::rand();
-        Calculator { mole: mole, rand_vz: rand_vz, normals: Mutex::new(HashMap::new()) }
+        Calculator {
+            mole: mole,
+            rand_vz: rand_vz,
+            normals: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn normal_vector(&self, atm: usize) -> Option<Vec3> {
@@ -38,7 +42,7 @@ impl<'m> Calculator<'m> {
                     vz = None;
                 } else {
                     let mut searchd = vec![atm]; // 已经搜索过的
-                    let mut searchs = atoms.nebs(atm);
+                    let mut searchs = atoms.nebs(atm).clone();
                     while searchs.len() > 0 {
                         let idx = searchs.pop().expect("弹出列表项失败");
                         searchd.push(idx);
@@ -88,25 +92,27 @@ impl<'m> Calculator<'m> {
                 let nebs = atoms.nebs(atm);
                 if nebs.len() == 1 {
                     return None;
-                } else if nebs.len() == 2 {
+                }
+                if nebs.len() == 2 {
                     let ai = nebs[0];
                     let aj = nebs[1];
                     let vi = atoms.vec(atm, ai).normalize();
                     let vj = atoms.vec(atm, aj).normalize();
                     let angle = vi.angle(&vj);
-                    if (angle - 1.0).abs() < 0.01 {
+                    if (angle - PI).abs() < 0.01 {
                         return None;
                     } else {
                         let mut normal = vi.cross(&vj).normalize();
                         // let [dx, dy, dz] = self.rand_vz.clone().into();
                         // let angle = maths::vec_angle(&normal.into(), &[dx, dy, dz]);
                         let angle = normal.angle(&self.rand_vz);
-                        if angle.abs() > 0.5 {
+                        if angle.abs() > 0.5 * PI {
                             normal = normal * -1.0;
                         }
                         return Some(normal);
                     }
-                } else if nebs.len() == 3 {
+                }
+                if nebs.len() == 3 {
                     let pi: Vec3 = atoms.get(nebs[0]).vec();
                     let pj: Vec3 = atoms.get(nebs[1]).vec();
                     let pk: Vec3 = atoms.get(nebs[2]).vec();
@@ -123,19 +129,20 @@ impl<'m> Calculator<'m> {
                         let rand_vect = self.rand_vz.clone();
                         // let angle = maths::vec_angle(&normal.into(), &rand_vect.into());
                         let angle = normal.angle(&rand_vect);
-                        if angle > 0.5 {
+                        if angle > 0.5 * PI {
                             normal *= -1.0;
                         }
                         return Some(normal);
                     } else {
                         let vect = atoms.get(atm).vec() - Vec3::new(cx, cy, cz);
-                        let angle = normal.angle(&vect) / PI;
-                        if angle > 0.5 {
+                        let angle = normal.angle(&vect);
+                        if angle > 0.5 * PI {
                             normal *= -1.0;
                         }
                         return Some(normal);
                     }
-                } else if nebs.len() == 6 {
+                }
+                if nebs.len() == 6 {
                     // 碳硼烷的特例，计算每一个键和其它原子的最小排斥方向
                     let mut min_val = f64::MIN;
                     let mut min_idx = nebs[0];
@@ -156,10 +163,9 @@ impl<'m> Calculator<'m> {
                         }
                     }
                     let vect = atoms.vec(atm, min_idx);
-                    Some(vect.normalize())
-                } else {
-                    return None;
+                    return Some(vect.normalize());
                 }
+                return None;
             })
             .clone()
     }
@@ -198,8 +204,8 @@ impl<'m> Calculator<'m> {
     pub fn LCS(&mut self, atm: usize, neb: Option<usize>) -> Option<Stm> {
         let atoms = self.mole.atoms();
         let atom = atoms.get(atm);
-        if !atom.stm.non {
-            return Some(atom.stm.clone());
+        if !atom.stm.is_none() {
+            return atom.stm.clone();
         }
         let nebs = atoms.nebs(atm);
 
@@ -218,43 +224,50 @@ impl<'m> Calculator<'m> {
                     return None;
                 }
 
-                let vx = (atoms.get(idx1).vec() - atoms.get(idx2).vec()).normalize();
+                let v_bond = (atoms.get(idx1).vec() - atoms.get(idx2).vec()).normalize();
                 let vr = Vec3::rand();
-                Some(vx.cross(&vr).normalize())
+                Some(v_bond.cross(&vr).normalize())
             }
         };
         let stm = match normal {
             None => None,
             Some(normal) => {
-                let vz = normal.normalize(); // 法向量
-                let [vx, vy, vz] = match neb {
+                let v_norm = normal.normalize(); // 法向量
+                let [v_norm, v_join, v_bond] = match neb {
                     Some(neb) => {
                         // 如果有相邻原子
-                        let vx = (atoms.get(neb).vec() - atom.vec()).normalize();
-                        let vz = if vx.angle(&vz).abs() < 0.1 { Vec3::rand() } else { vz };
-                        let vy = vz.cross(&vx).normalize();
-                        let vz = vx.cross(&vy).normalize(); // 重新正交化
-                        [vx, vy, vz]
+                        let v_bond = (atoms.get(neb).vec() - atom.vec()).normalize();
+                        let v_norm = if v_bond.angle(&v_norm).abs() < 0.1 {
+                            Vec3::rand()
+                        } else {
+                            v_norm
+                        };
+                        let v_join = v_norm.cross(&v_bond).normalize();
+                        let v_norm = v_bond.cross(&v_join).normalize(); // 重新正交化
+                        [v_bond, v_join, v_norm]
                     }
                     None => {
-                        let cent = atoms.cent(&nebs); // 相邻原子的中心
-
                         if nebs.len() == 1 {
-                            let vx: Vec3 = atoms.vec(nebs[0], atm).normalize(); // 这个是确定的，键轴的方向
+                            let v_bond: Vec3 = atoms.vec(atm, nebs[0]).normalize(); // 这个是确定的，键轴的方向
                             // 如果vx和vz在同一个方向，则重新整个vz
-                            let vz = if vx.angle(&vz).abs() < 0.1 { Vec3::rand() } else { vz };
-                            let vy = vz.cross(&vx).normalize();
-                            let vz = vx.cross(&vy).normalize(); // 重新正交化
-                            // log::info!("原子:{},vx:{},vy:{},vz:{}", atm + 1, vx, vy, vz);
-                            [vx, vy, vz]
+                            let v_norm = if v_bond.angle(&v_norm).abs() < 0.01 {
+                                Vec3::rand()
+                            } else {
+                                v_norm
+                            };
+                            let v_join = v_norm.cross(&v_bond).normalize();
+                            let v_norm = v_bond.cross(&v_join).normalize(); // 重新正交化
+                            // log::info!("原子:{},v_bond:{},v_join:{},v_norm:{}", atm + 1, v_bond, v_join, v_norm);
+                            [v_norm, v_join, v_bond]
                         } else if nebs.len() == 2 {
                             let idx1 = nebs[0];
                             let idx2 = nebs[1];
-                            let vx = atoms.vec(idx1, idx2).normalize();
-                            let vy = vz.cross(&vx).normalize();
-                            let vx = vy.cross(&vz).normalize(); // 重新正交化
-                            [vx, vy, vz]
+                            let v_bond = atoms.vec(idx1, idx2).normalize();
+                            let v_join = v_norm.cross(&v_bond).normalize();
+                            let v_bond = v_join.cross(&v_norm).normalize(); // 重新正交化
+                            [v_norm, v_join, v_bond]
                         } else {
+                            let cent = atoms.cent(&nebs); // 相邻原子的中心
                             let vect = cent - atom.vec(); // 中心到原子的向量
                             let dist = vect.length();
                             let vr = if dist > 0.01 {
@@ -262,15 +275,16 @@ impl<'m> Calculator<'m> {
                             } else {
                                 Vec3::rand()
                             };
-                            let vy = vz.cross(&vr).normalize();
-                            let vx = vy.cross(&vz).normalize();
-                            [vx, vy, vz]
+                            let vr = if vr.angle(&v_norm) < 0.01 { Vec3::rand() } else { vr };
+                            let v_join = v_norm.cross(&vr).normalize();
+                            let v_bond = v_join.cross(&v_norm).normalize();
+                            [v_norm, v_join, v_bond]
                         }
                     }
                 };
-                let ex: [f64; 3] = vx.into_arr();
-                let ey: [f64; 3] = vy.into_arr();
-                let ez: [f64; 3] = vz.into_arr();
+                let ex: [f64; 3] = v_norm.into_arr();
+                let ey: [f64; 3] = v_join.into_arr();
+                let ez: [f64; 3] = v_bond.into_arr();
                 let stm = Stm::new(ex, ey, ez);
                 log::info!("atm:{}", atm);
                 if !stm.check() {
@@ -311,6 +325,7 @@ impl<'m> Calculator<'m> {
         }
         mlcs
     }
+
     pub fn reactions(&self, atm: usize) -> Vec<Vec3> {
         let atoms = self.mole.atoms();
         let nebs = atoms.nebs(atm);
@@ -339,14 +354,15 @@ impl<'m> Calculator<'m> {
             vectors.push(bond_vect.clone() * -1.0);
             return vectors;
             // return self.gt_bond_angle(atm);
-        } else if nebs.len() == 2 {
+        }
+        if nebs.len() == 2 {
             let ai = nebs[0];
             let aj = nebs[1];
             let vi = atoms.vec(atm, ai).normalize();
             let vj = atoms.vec(atm, aj).normalize();
-            let angle = vi.angle(&vj);
+            let angle = vi.angle(&vj); // 两向量之间的夹角
             let cent = Vec3::zero();
-            if (angle - PI).abs() < 1e-1 {
+            if atoms.is_line(atm) {
                 // 线性分子
                 let vr = Vec3::rand();
                 let bond_vec = atoms.vec(ai, aj).normalize();
@@ -365,21 +381,25 @@ impl<'m> Calculator<'m> {
                     count = 3;
                 }
                 let dang = angle / (count as f64);
-                for i in 0..count + 1 {
+                for i in 0..1 + count {
                     // 水平旋转
                     let rang = dang * i as f64; // 旋转角度，跳过90度
                     let axis = vi.rotate_arrow(&cent, &vert_vec, -rang).normalize();
-                    for i in 0..18 {
+                    for j in 0..18 {
                         // 垂直旋转
                         // 垂直方向都是18个
                         // let vector = maths::rotate_point(&vert_vec, &cent, &axis, i as f64 * PI / 18.0);
-                        let vector = vert_vec.rotate_arrow(&cent, &axis, i as f64 * PI / 18.0);
+                        if i != 0 && (j == 0 || j == 17) {
+                            continue;
+                        }
+                        let vector = vert_vec.rotate_arrow(&cent, &axis, j as f64 * PI / 18.0);
                         vectors.push(vector.normalize());
                     }
                 }
             }
             return vectors;
-        } else if nebs.len() == 3 {
+        }
+        if nebs.len() == 3 {
             let atom = atoms.get(atm);
             let ai = nebs[0];
             let aj = nebs[1];
@@ -397,6 +417,10 @@ impl<'m> Calculator<'m> {
             let is_plane = distance.abs() < 1e-2;
             let [a, b, c, _d] = plan_params;
             let mut normal = Vec3::new(a, b, c).normalize();
+            let angle = normal.angle(&self.rand_vz);
+            if angle.abs() > 0.5 * PI {
+                normal = normal * -1.0;
+            }
             if is_plane {
                 // 如果是平面
                 vectors.push(normal.clone());
@@ -416,9 +440,8 @@ impl<'m> Calculator<'m> {
                 }
             }
             return vectors;
-        } else {
-            return vectors;
         }
+        return vectors;
     }
 
     pub fn gt_bond_angle(&self, atm: usize) -> Vec<Vec3> {
@@ -438,7 +461,7 @@ impl<'m> Calculator<'m> {
                 let vec_ab = (&neb_xyz - &atm_xyz).normalize();
                 // let angle = maths::vec_angle(&vec_ab.into(), &vec_ag.into());
                 let angle = vec_ab.angle(&vec_ag);
-                if angle < 0.5 {
+                if angle < 0.5 * PI {
                     meet = false;
                 }
             }

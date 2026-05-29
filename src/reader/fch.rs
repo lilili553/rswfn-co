@@ -5,10 +5,9 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::LazyLock;
 
-use crate::base::BasisData;
-use crate::base::{Atoms, Basis, Coefs, Stm};
+use crate::base::{Atoms, Bas, Basis, Coefs, Shl, Stm};
 use crate::datas::btrans;
-use crate::reader::{Reader, read_lines};
+use crate::reader::{Reader, read_lines, shl_basis, shl_forms};
 
 static SHL2SYM: LazyLock<HashMap<isize, Vec<&str>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
@@ -46,61 +45,6 @@ pub struct FchReader {
     pub marks: HashMap<String, usize>,
     pub count: Counts,
     pub lines: Vec<String>,
-}
-
-impl Reader for FchReader {
-    fn get_atoms(&self) -> Atoms {
-        let atms = self.read_atms().iter().map(|x| *x as usize).collect::<Vec<usize>>();
-        let xyzs = self.read_xyzs();
-        let crgs = self.parse_block("Nuclear charges").R;
-        let geome = Atoms::new(&atms, &xyzs, &crgs, None);
-        geome
-    }
-
-    fn get_basis(&self) -> Basis {
-        let shl_type = self.parse_block("Shell types").I;
-        let shl_nums = self.parse_block("Number of primitives per shell").I;
-        let shl_atms = self.parse_block("Shell to atom map").I;
-        let shl_atms = shl_atms.iter().map(|x| *x as usize - 1).collect::<Vec<usize>>();
-        let pm_alps = self.parse_block("Primitive exponents").R;
-        let pm_coes = self.parse_block("Contraction coefficients").R;
-        let mut sp_coes = Vec::new();
-        if self.marks.contains_key("P(S=P) Contraction coefficients") {
-            sp_coes = self.parse_block("P(S=P) Contraction coefficients").R;
-        }
-        let mut atm = 0usize;
-        let mut shl = 0usize;
-        let mut idx = 0;
-        let mut datas: Vec<BasisData> = Vec::new();
-        for i in 0..shl_type.len() {
-            let shl_atm = shl_atms[i] as usize;
-            let shl_num = shl_nums[i] as usize;
-            if atm != shl_atm {
-                atm = shl_atm;
-                shl = 0;
-            }
-            for j in 0..shl_num as usize {
-                if shl_type[i] == -1 {
-                    datas.push(BasisData::new(shl_atm, shl, 0, pm_alps[idx], pm_coes[idx], (0, 0, 0)));
-                    datas.push(BasisData::new(shl_atm, shl, 1, pm_alps[idx], sp_coes[idx], (0, 0, 0)));
-                } else {
-                    let ang = shl_type[i].abs() as usize;
-                    datas.push(BasisData::new(shl_atm, shl, ang, pm_alps[idx], pm_coes[idx], (0, 0, 0)));
-                }
-                idx += 1;
-            }
-            shl += 1;
-        }
-        datas.sort_by_key(|data| (data.atm, data.shl, data.ang));
-        let mut basis = Basis::blank();
-        basis.build(datas);
-        basis
-    }
-
-    fn get_coefs(&self) -> Coefs {
-        let (ato_atms, ato_shls, ato_syms, engs, occs, cmat) = self.read_coefs();
-        Coefs::new(ato_atms, ato_shls, ato_syms, engs, occs, cmat)
-    }
 }
 
 impl FchReader {
@@ -231,7 +175,7 @@ impl FchReader {
         Some(stms)
     }
 
-    pub fn read_coefs(&self) -> (Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<usize>, Array2<f64>) {
+    pub fn read_coefs(&self) -> (Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<f64>, Array2<f64>) {
         let nato = self.count.nato;
         let nobt = self.count.nobt;
         let coefs_a = self.parse_block("Alpha MO coefficients").R;
@@ -282,14 +226,14 @@ impl FchReader {
         let nelb = self.count.nelb;
         if open {
             for i in 0..self.count.nobt {
-                occs.push(if i < nela { 1 } else { 0 });
+                occs.push(if i < nela { 1.0 } else { 0.0 });
             }
             for i in 0..self.count.nobt {
-                occs.push(if i < nelb { 1 } else { 0 });
+                occs.push(if i < nelb { 1.0 } else { 0.0 });
             }
         } else {
             for i in 0..self.count.nobt {
-                occs.push(if i < nela { 2 } else { 0 });
+                occs.push(if i < nela { 2.0 } else { 0.0 });
             }
         }
         assert_ne!(engs.len(), 0);
@@ -298,5 +242,62 @@ impl FchReader {
         assert_ne!(ato_shls.len(), 0);
         assert_ne!(ato_syms.len(), 0);
         (ato_atms, ato_shls, ato_syms, engs, occs, cmat)
+    }
+}
+
+impl Reader for FchReader {
+    fn get_atoms(&self) -> Atoms {
+        let atms = self.read_atms().iter().map(|x| *x as usize).collect::<Vec<usize>>();
+        let xyzs = self.read_xyzs();
+        let crgs = self.parse_block("Nuclear charges").R;
+        let mut atoms = Atoms::new(&atms, &xyzs, &crgs);
+        atoms.neles = [self.count.nela, self.count.nelb];
+        atoms
+    }
+
+    fn get_basis(&self) -> Option<Basis> {
+        let shl_type = self.parse_block("Shell types").I;
+        let shl_nums = self.parse_block("Number of primitives per shell").I;
+        let shl_atms = self.parse_block("Shell to atom map").I;
+        let shl_atms = shl_atms.iter().map(|x| *x as usize - 1).collect::<Vec<usize>>();
+        let pm_alps = self.parse_block("Primitive exponents").R;
+        let pm_coes = self.parse_block("Contraction coefficients").R;
+        let mut sp_coes = Vec::new();
+        if self.marks.contains_key("P(S=P) Contraction coefficients") {
+            sp_coes = self.parse_block("P(S=P) Contraction coefficients").R;
+        }
+        let mut atm = 0usize;
+        let mut shl = 0usize;
+        let mut idx = 0;
+        let mut datas = Vec::new();
+        for i in 0..shl_type.len() {
+            let shl_atm = shl_atms[i] as usize;
+            let shl_num = shl_nums[i] as usize;
+            if atm != shl_atm {
+                atm = shl_atm;
+                shl = 0;
+            }
+            for j in 0..shl_num as usize {
+                if shl_type[i] == -1 {
+                    datas.push((shl_atm, shl, 0, pm_alps[idx], pm_coes[idx]));
+                    datas.push((shl_atm, shl, 1, pm_alps[idx], sp_coes[idx]));
+                } else {
+                    let ang = shl_type[i].abs() as usize;
+                    datas.push((shl_atm, shl, ang, pm_alps[idx], pm_coes[idx]));
+                }
+                idx += 1;
+            }
+            shl += 1;
+        }
+        datas.sort_by_key(|data| (data.0, data.1, data.2));
+        let (ato_atms, ato_shls, ato_syms, _, _, _) = self.read_coefs();
+        let forms = shl_forms(&ato_atms, &ato_shls, &ato_syms);
+        Some(shl_basis(&datas, &forms))
+    }
+
+    fn get_coefs(&self) -> Option<Coefs> {
+        let (ato_atms, ato_shls, ato_syms, engs, occs, cmat) = self.read_coefs();
+        let coefs = Coefs::new(ato_atms, ato_shls, ato_syms, engs, occs, cmat);
+        Some(coefs)
     }
 }

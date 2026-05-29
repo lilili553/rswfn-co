@@ -1,9 +1,11 @@
 use cached::proc_macro::cached;
 use ndarray::Array2;
 use std::sync::LazyLock;
+
+use crate::maths;
 // 数据来源于卢天博客 http://sobereva.com/97
 #[rustfmt::skip]
-pub static DMAT: LazyLock<Array2<f64>> = LazyLock::new(|| { 
+pub static DMAT: LazyLock<Array2<f64>> = LazyLock::new(|| {
     let mut dmat = Array2::<f64>::zeros((6,5));
     dmat[( 0, 0)]=-0.5;
     dmat[( 0, 3)]= f64::sqrt(3.0)/2.0;
@@ -17,7 +19,7 @@ pub static DMAT: LazyLock<Array2<f64>> = LazyLock::new(|| {
 });
 
 #[rustfmt::skip]
-pub static FMAT: LazyLock<Array2<f64>> = LazyLock::new(|| { 
+pub static FMAT: LazyLock<Array2<f64>> = LazyLock::new(|| {
     let mut fmat = Array2::<f64>::zeros((10,7));
     fmat[( 0, 1)]=-f64::sqrt(3.0/8.0);
     fmat[( 0, 5)]= f64::sqrt(5.0/8.0);
@@ -128,19 +130,31 @@ pub static HMAT: LazyLock<Array2<f64>> = LazyLock::new(|| {
     hmat
 });
 
-pub fn get_mat(ncar: usize) -> Array2<f64> {
-    match ncar {
-        1 => Array2::eye(1),
-        3 => Array2::eye(3),
-        6 => DMAT.to_owned(),
-        10 => FMAT.to_owned(),
-        15 => GMAT.to_owned(),
-        21 => HMAT.to_owned(),
+pub fn sph2car_mat(ang: usize) -> Array2<f64> {
+    match ang {
+        0 => Array2::eye(1),
+        1 => Array2::eye(3),
+        2 => DMAT.to_owned(),
+        3 => FMAT.to_owned(),
+        4 => GMAT.to_owned(),
+        5 => HMAT.to_owned(),
         _ => {
-            dbg!("非法ncar:{}", ncar);
-            panic!("非法ncar:{}", ncar)
+            dbg!("非法角动量:{}", ang);
+            panic!("非法角动量:{}", ang)
         }
     }
+}
+
+// pub fn car2sph_mat(ang: usize) -> Array2<f64> {
+//     let tmat = sph2car_mat(ang);
+//     let tt = tmat.t();
+//     let tmat = tt.dot(&tmat);
+//     maths::inv(&tmat).dot(&tt)
+// }
+
+pub fn car2sph_mat(ang: usize) -> Array2<f64> {
+    let tmat = sph2car_mat(ang);
+    tmat.t().to_owned()
 }
 
 pub const MIX_S_SYMS: [&str; 1] = ["S"];
@@ -247,12 +261,20 @@ pub static LMNS: LazyLock<Vec<[usize; 3]>> = LazyLock::new(|| [&MIX_S_LMNS[..], 
 
 pub static SYMS: LazyLock<Vec<&str>> = LazyLock::new(|| [&MIX_S_SYMS[..], &MIX_P_SYMS[..], &CAR_D_SYMS[..], &CAR_F_SYMS[..], &CAR_G_SYMS[..], &CAR_H_SYMS[..]].concat());
 
-#[rustfmt::skip]
-pub static MIX_SYMS: LazyLock<Vec<&str>> = LazyLock::new(|| [&MIX_S_SYMS[..], &MIX_P_SYMS[..]].concat());
+#[cached]
+pub fn get_mix_syms() -> Vec<&'static str> {
+    [&MIX_S_SYMS[..], &MIX_P_SYMS[..]].concat()
+}
 
-pub static CAR_SYMS: LazyLock<Vec<&str>> = LazyLock::new(|| [&CAR_D_SYMS[..], &CAR_F_SYMS[..], &CAR_G_SYMS[..], &CAR_H_SYMS[..]].concat());
+#[cached]
+pub fn get_car_syms() -> Vec<&'static str> {
+    [&CAR_D_SYMS[..], &CAR_F_SYMS[..], &CAR_G_SYMS[..], &CAR_H_SYMS[..]].concat()
+}
 
-pub static SPH_SYMS: LazyLock<Vec<&str>> = LazyLock::new(|| [&SPH_D_SYMS[..], &SPH_F_SYMS[..], &SPH_G_SYMS[..], &SPH_H_SYMS[..]].concat());
+#[cached]
+pub fn get_sph_syms() -> Vec<&'static str> {
+    [&SPH_D_SYMS[..], &SPH_F_SYMS[..], &SPH_G_SYMS[..], &SPH_H_SYMS[..]].concat()
+}
 
 #[rustfmt::skip]
 pub fn ang2lmns(ang: usize) -> Vec<[usize; 3]> {
@@ -306,6 +328,7 @@ pub fn sym2lmn(sym: &str) -> [usize; 3] {
 }
 
 // 根据长度获取符号
+#[cached]
 pub fn len2syms(len: usize) -> Vec<String> {
     let syms = match len {
         1 => MIX_S_SYMS.clone().to_vec(),
@@ -324,4 +347,69 @@ pub fn len2syms(len: usize) -> Vec<String> {
         _ => panic!("未知长度"),
     };
     syms.iter().map(|sym| sym.to_string()).collect()
+}
+
+#[cached(key = "String", convert = r"{ sym.to_string() }")]
+pub fn sym2ang(sym: &str) -> usize {
+    for s_sym in MIX_S_SYMS {
+        if sym == s_sym {
+            return 0;
+        }
+    }
+    for p_sym in MIX_P_SYMS {
+        if sym == p_sym {
+            return 1;
+        }
+    }
+    for d_sym in CAR_D_SYMS {
+        if sym == d_sym {
+            return 2;
+        }
+    }
+    for d_sym in SPH_D_SYMS {
+        if sym == d_sym {
+            return 2;
+        }
+    }
+    for f_sym in SPH_F_SYMS {
+        if sym == f_sym {
+            return 3;
+        }
+    }
+    for f_sym in CAR_F_SYMS {
+        if sym == f_sym {
+            return 3;
+        }
+    }
+    for g_sym in CAR_G_SYMS {
+        if sym == g_sym {
+            return 4;
+        }
+    }
+    for g_sym in SPH_G_SYMS {
+        if sym == g_sym {
+            return 4;
+        }
+    }
+    panic!("未知符号:{}", sym);
+}
+
+/// 根据符号，获取壳层类型
+pub fn sym2stp(sym: &str) -> usize {
+    for mix_sym in get_mix_syms() {
+        if sym == mix_sym {
+            return 0;
+        }
+    }
+    for sph_sym in get_sph_syms() {
+        if sym == sph_sym {
+            return 1;
+        }
+    }
+    for car_sym in get_car_syms() {
+        if sym == car_sym {
+            return 2;
+        }
+    }
+    panic!("未知符号:{}", sym);
 }

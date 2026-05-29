@@ -13,7 +13,10 @@ pub struct Calculator<'m> {
 
 impl<'m> Calculator<'m> {
     pub fn new(mole: &'m Mole) -> Self {
-        Calculator { mole, rhos: OnceLock::new() }
+        Calculator {
+            mole,
+            rhos: OnceLock::new(),
+        }
     }
 
     pub fn nuc_potential(
@@ -44,7 +47,10 @@ impl<'m> Calculator<'m> {
             let xyz_caler = dftgrid::Calculator::new(self.mole);
             let (grids, weits) = xyz_caler.mol_grids(5, 74);
             let atms = self.mole.atoms().idxs();
-            let dens: Vec<f64> = grids.par_iter().map(|grid| rho_caler.mol_rho_dm(grid, 0).0).collect();
+            let dens: Vec<f64> = grids
+                .par_iter()
+                .map(|grid| rho_caler.mol_rho_dm(grid, 0).val0)
+                .collect();
             (grids, weits, dens)
         });
 

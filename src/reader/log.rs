@@ -1,13 +1,14 @@
 // 读取log文件的脚本
 
-use crate::base::{Atoms, Basis, BasisData, Coefs};
+use crate::base::{Atoms, Basis, Coefs, Shl};
 use crate::datas::consts::BOHR;
 use crate::maths;
-use crate::reader::{self, Reader, read_lines};
+use crate::reader::{self, Reader, charge_number, read_lines, shl_basis, shl_forms};
 use ndarray::{Array2, Axis, concatenate};
 use regex::Regex;
 use std::collections::HashMap;
 use std::process::exit;
+use std::sync::OnceLock;
 
 // 一个振动频率
 #[derive(Debug, Clone)]
@@ -45,6 +46,8 @@ pub struct LogReader {
     nobt: usize,
     pub charge: isize,
     pub multip: usize,
+    _job: OnceLock<String>,
+    _coefs: OnceLock<Option<(Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>)>>,
 }
 
 impl LogReader {
@@ -134,30 +137,34 @@ impl LogReader {
             nobt: nobt,
             charge: charge,
             multip: multip,
+            _job: OnceLock::new(),
+            _coefs: OnceLock::new(),
         }
     }
 
-    pub fn read_job(&self) -> String {
-        let title_number = match self.marks.get("job") {
-            Some(n) => *n,
-            None => {
-                return "".to_string();
+    pub fn read_job(&self) -> &String {
+        self._job.get_or_init(|| {
+            let title_number = match self.marks.get("job") {
+                Some(n) => *n,
+                None => {
+                    return "".to_string();
+                }
+            };
+            let mut job = "".to_string();
+            let re = Regex::new(r"^ -+$").expect("正则表达式构建失败");
+            for line in self.lines.iter().skip(title_number as usize) {
+                if re.is_match(line) {
+                    break;
+                }
+                job.push_str(&line.replace("#", "").trim());
             }
-        };
-        let mut job = "".to_string();
-        let re = Regex::new(r"^ -+$").expect("正则表达式构建失败");
-        for line in self.lines.iter().skip(title_number as usize) {
-            if re.is_match(line) {
-                break;
-            }
-            job.push_str(&line.replace("#", "").trim());
-        }
-        println!("job={}", job);
-        job
+            job
+        })
     }
 
     // 读取系数矩阵
-    pub fn read_coefs(&self, title_number: usize) -> (Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<bool>, Array2<f64>) {
+    pub fn _read_coefs(&self, spin: &str) -> (Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>) {
+        let mark = self.marks.get(spin).unwrap();
         let job = self.read_job();
         if !job.contains("pop=full") {
             log::error!("请加入关键词pop=full");
@@ -172,11 +179,11 @@ impl LogReader {
         let mut ato_shls: Vec<usize> = Vec::with_capacity(nato as usize);
         let mut ato_syms: Vec<String> = Vec::with_capacity(nato as usize);
         let mut obt_engs: Vec<f64> = Vec::with_capacity(nobt as usize);
-        let mut obt_occs: Vec<bool> = Vec::with_capacity(nobt as usize);
+        let mut obt_syms: Vec<String> = Vec::with_capacity(nobt as usize);
         // 先获取所有的行
         // let mut lines = Vec::new();
         // 彻底解决列不同问题
-        let line = self.lines.get(title_number as usize + 4).expect("获取mark行失败");
+        let line = self.lines.get(*mark as usize + 4).expect("获取mark行失败");
         let nnum = line.len() - if nobt > 5 { 50 } else { nobt as usize * 10 };
         let line = line[0..nnum].to_owned();
         let mut ups = Vec::new();
@@ -196,7 +203,7 @@ impl LogReader {
         // println!("cols={:?}", cols);
         let mut iatm = 0;
         for i in 0..nblock {
-            let loc = title_number + 1 + i * (nato + 3);
+            let loc = mark + 1 + i * (nato + 3);
 
             // 原子信息
             if i == 0 {
@@ -222,17 +229,17 @@ impl LogReader {
             let occs_line = self.lines.get(loc as usize + 1).expect("获取文件行失败");
             let occs_part = &occs_line[cols[5]..];
             // println!("occ_part={}", occs_part);
-            let occs: Vec<bool> = occs_part
+            let occs: Vec<String> = occs_part
                 .chars()
                 .collect::<Vec<_>>()
                 .chunks(10)
                 .map(|chunk| {
                     let s: String = chunk.iter().collect();
                     // println!("s={}", s);
-                    s.trim().ends_with('O')
+                    s.trim().to_owned()
                 })
                 .collect();
-            obt_occs.extend_from_slice(&occs);
+            obt_syms.extend_from_slice(&occs);
 
             // 轨道能量
             let engs_line = self.lines.get(loc as usize + 2).expect("获取文件行失败");
@@ -272,11 +279,36 @@ impl LogReader {
                 }
             }
         }
-        (ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat)
+        (ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat)
+    }
+
+    pub fn read_coefs(&self) -> &Option<(Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>)> {
+        self._coefs.get_or_init(|| {
+            if self.marks.contains_key("coefs") {
+                // let title_number = *self.marks.get("coefs").expect("titles get coefs error");
+                let (ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat) = self._read_coefs("coefs");
+                Some((ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat))
+            } else if self.marks.contains_key("coefs_a") && self.marks.contains_key("coefs_b") {
+                let coefs_a = self._read_coefs("coefs_a");
+                let coefs_b = self._read_coefs("coefs_b");
+                let ato_atms = coefs_a.0;
+                let ato_shls = coefs_a.1;
+                let ato_syms = coefs_a.2;
+                let mut obt_engs = coefs_a.3;
+                let mut obt_syms = coefs_a.4;
+                obt_engs.extend_from_slice(&coefs_b.3);
+                obt_syms.extend_from_slice(&coefs_b.4);
+                let cmat = concatenate(Axis(1), &[coefs_a.5.view(), coefs_b.5.view()]).expect("矩阵拼接失败");
+                Some((ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat))
+            } else {
+                None
+            }
+        })
     }
 
     pub fn read_geome(&self, irow: Option<usize>) -> (Vec<usize>, Vec<[f64; 3]>) {
-        let reg = Regex::new(r" +\d+ +(\d+) +\d +(-?\d+.\d{6}) +(-?\d+.\d{6}) +(-?\d+.\d{6})").expect("正则表达式构建失败");
+        let reg =
+            Regex::new(r" +\d+ +(\d+) +\d +(-?\d+.\d{6}) +(-?\d+.\d{6}) +(-?\d+.\d{6})").expect("正则表达式构建失败");
         let mut atms = Vec::new();
         let mut xyzs = Vec::new();
         let irow = match irow {
@@ -292,9 +324,9 @@ impl LogReader {
         for line in self.lines.iter().skip(irow + 5) {
             if let Some(caps) = reg.captures(&line) {
                 let atm: usize = caps[1].parse().expect("整数解析失败");
-                let x: f64 = caps[2].parse::<f64>().expect("浮点数解析失败") / BOHR;
-                let y: f64 = caps[3].parse::<f64>().expect("浮点数解析失败") / BOHR;
-                let z: f64 = caps[4].parse::<f64>().expect("浮点数解析失败") / BOHR;
+                let x: f64 = caps[2].parse::<f64>().expect("浮点数解析失败") * BOHR;
+                let y: f64 = caps[3].parse::<f64>().expect("浮点数解析失败") * BOHR;
+                let z: f64 = caps[4].parse::<f64>().expect("浮点数解析失败") * BOHR;
                 atms.push(atm);
                 xyzs.push([x, y, z]);
             } else {
@@ -320,7 +352,7 @@ impl LogReader {
                     if line.contains(mark) {
                         let (atms, xyzs) = self.read_geome(Some(l));
                         let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-                        let geome = Atoms::new(&atms, &xyzs, &crgs, None);
+                        let geome = Atoms::new(&atms, &xyzs, &crgs);
                         geomes.push(geome);
                     }
                 }
@@ -348,10 +380,16 @@ impl LogReader {
                 if line.contains(mark) {
                     yes = true;
                     if i < 4 {
-                        let val: f64 = line[45..58].trim().parse().expect(format!("解析失败: {}", &line[45..58]).as_ref());
+                        let val: f64 = line[45..58]
+                            .trim()
+                            .parse()
+                            .expect(format!("解析失败: {}", &line[45..58]).as_ref());
                         engs[i] = val;
                     } else {
-                        let val = line[45..65].trim().parse().expect(format!("解析失败: {}", &line[45..65]).as_ref());
+                        let val = line[45..65]
+                            .trim()
+                            .parse()
+                            .expect(format!("解析失败: {}", &line[45..65]).as_ref());
                         engs[i] = val;
                     }
                 }
@@ -369,7 +407,9 @@ impl LogReader {
         for line in self.lines.iter() {
             if line.contains("Frequencies --") {
                 let vals: Vec<&str> = line[15..].trim().split_whitespace().collect();
-                let vals = vals.iter().map(|val| val.parse::<f64>().expect(format!("解析失败: {}", val).as_ref()));
+                let vals = vals
+                    .iter()
+                    .map(|val| val.parse::<f64>().expect(format!("解析失败: {}", val).as_ref()));
                 freqs.extend(vals);
             }
         }
@@ -392,7 +432,17 @@ impl LogReader {
             row += 1;
             for j in 0..nrow as usize {
                 let line = self.lines.get(row).expect("获取行失败");
-                let nums = line[loc..].trim().split_whitespace().map(|s| s.replace("D", "E").parse::<f64>().expect(&format!("解析失败:{},{}", row, line[loc..].to_string()))).collect::<Vec<f64>>();
+                let nums = line[loc..]
+                    .trim()
+                    .split_whitespace()
+                    .map(|s| {
+                        s.replace("D", "E").parse::<f64>().expect(&format!(
+                            "解析失败:{},{}",
+                            row,
+                            line[loc..].to_string()
+                        ))
+                    })
+                    .collect::<Vec<f64>>();
                 for (k, num) in nums.iter().enumerate() {
                     let irow = (nato - nrow) as usize + j;
                     matrix[(irow, col + k)] = *num;
@@ -481,10 +531,26 @@ impl LogReader {
         let mut vibrs = vec![vec![]; ncol];
         for ib in 0..nblock {
             let start = irow + ib * sblock;
-            let freql: Vec<f64> = self.lines[start + 2][15..].trim().split_whitespace().map(|v| v.parse().unwrap()).collect();
-            let redml: Vec<f64> = self.lines[start + 3][15..].trim().split_whitespace().map(|v| v.parse().unwrap()).collect();
-            let frccl: Vec<f64> = self.lines[start + 4][15..].trim().split_whitespace().map(|v| v.parse().unwrap()).collect();
-            let irinl: Vec<f64> = self.lines[start + 5][15..].trim().split_whitespace().map(|v| v.parse().unwrap()).collect();
+            let freql: Vec<f64> = self.lines[start + 2][15..]
+                .trim()
+                .split_whitespace()
+                .map(|v| v.parse().unwrap())
+                .collect();
+            let redml: Vec<f64> = self.lines[start + 3][15..]
+                .trim()
+                .split_whitespace()
+                .map(|v| v.parse().unwrap())
+                .collect();
+            let frccl: Vec<f64> = self.lines[start + 4][15..]
+                .trim()
+                .split_whitespace()
+                .map(|v| v.parse().unwrap())
+                .collect();
+            let irinl: Vec<f64> = self.lines[start + 5][15..]
+                .trim()
+                .split_whitespace()
+                .map(|v| v.parse().unwrap())
+                .collect();
             freqs.extend(freql);
             redms.extend(redml);
             frccs.extend(frccl);
@@ -501,7 +567,13 @@ impl LogReader {
             }
         }
         for i in 0..ncol {
-            let vibe = Vibe { freq: freqs[i], redm: redms[i], frcc: frccs[i], irin: irins[i], vibs: vibrs[i].clone() };
+            let vibe = Vibe {
+                freq: freqs[i],
+                redm: redms[i],
+                frcc: frccs[i],
+                irin: irins[i],
+                vibs: vibrs[i].clone(),
+            };
             vibrations.push(vibe);
         }
         Some(vibrations)
@@ -525,20 +597,16 @@ impl Reader for LogReader {
                 }
             }
         };
-        let mut atoms = Atoms::new(&atms, &xyzs, &crgs, None);
+        let mut atoms = Atoms::new(&atms, &xyzs, &crgs);
         let C = self.charge;
         let S = self.multip as isize;
-        let mut N = 0;
-        let (atms, _) = self.read_geome(None);
-        for atm in atms.iter() {
-            N += *atm as isize;
-        }
+        let N = atoms.crgs().iter().sum::<f64>() as usize;
         let neles = reader::charge_number(C, S as usize, N as usize);
         atoms.neles = neles;
         atoms
     }
 
-    fn get_basis(&self) -> Basis {
+    fn get_basis(&self) -> Option<Basis> {
         let s1 = Regex::new(r"^ +(\d+) +\d+$").expect("reg new error");
         let s2 = Regex::new(r" ([SPDFG]+) +(\d+) \d.\d{2} +\d.\d{12}").expect("reg new error");
         let s3 = Regex::new(r"^ +(( +-?\d.\d{10}D[+-]\d{2}){2,3})").expect("reg new error");
@@ -548,16 +616,15 @@ impl Reader for LogReader {
         ang_map.insert('D', 2);
         ang_map.insert('F', 3);
         ang_map.insert('G', 4);
-        let mut data: Vec<BasisData> = Vec::new();
+        let mut datas = Vec::new();
         let mut angs: Vec<usize> = Vec::new();
         let mut shl: usize = 0;
         let mut atm: usize = 0;
-        let mut basis = Basis::blank();
         let title_number = match self.marks.get("basis") {
             Some(number) => *number,
             None => {
                 log::error!("没有找到基组信息");
-                return basis;
+                return None;
             }
         };
         for line in self.lines.iter().skip(title_number as usize + 1) {
@@ -567,7 +634,10 @@ impl Reader for LogReader {
             } else if s2.is_match(&line) {
                 let caps = s2.captures(&line).expect("cap error");
                 let shl_sym: String = caps[1].to_string();
-                angs = shl_sym.chars().map(|s| *ang_map.get(&s).expect("未知角动量符号")).collect();
+                angs = shl_sym
+                    .chars()
+                    .map(|s| *ang_map.get(&s).expect("未知角动量符号"))
+                    .collect();
                 shl += 1;
             } else if s3.is_match(&line) {
                 let caps = s3.captures(&line).expect("cap error");
@@ -581,14 +651,14 @@ impl Reader for LogReader {
                 if angs.len() == 1 {
                     let alp = nums[0];
                     let coe = nums[1];
-                    data.push(BasisData::new(atm - 1, shl - 1, angs[0], alp, coe, (0, 0, 0)));
+                    datas.push((atm - 1, shl - 1, angs[0], alp, coe));
                 }
                 if angs.len() == 2 {
                     let alp = nums[0];
                     let coe1 = nums[1];
                     let coe2 = nums[2];
-                    data.push(BasisData::new(atm - 1, shl - 1, angs[0], alp, coe1, (0, 0, 0)));
-                    data.push(BasisData::new(atm - 1, shl - 1, angs[1], alp, coe2, (0, 0, 0)));
+                    datas.push((atm - 1, shl - 1, angs[0], alp, coe1));
+                    datas.push((atm - 1, shl - 1, angs[1], alp, coe2));
                 }
             } else if line == " ****" {
                 shl = 0;
@@ -597,51 +667,43 @@ impl Reader for LogReader {
                 break;
             }
         }
-        let mut idxs: Vec<usize> = (0..data.len()).collect();
-        idxs.sort_by_key(|idx| (data[*idx].atm, data[*idx].shl, data[*idx].ang));
-        data = idxs.iter().map(|idx| data[*idx].clone()).collect();
-        basis.build(data);
-        basis
+        datas.sort_by_key(|data| (data.0, data.1, data.2));
+        let coefs = self.read_coefs();
+        let forms = if let Some(coefs) = coefs {
+            let (ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat) = coefs;
+            shl_forms(&ato_atms, &ato_shls, &ato_syms)
+        } else {
+            return None;
+        };
+        Some(shl_basis(&datas, &forms))
     }
 
-    fn get_coefs(&self) -> Coefs {
-        let coefs = if self.marks.contains_key("coefs") {
-            let title_number = *self.marks.get("coefs").expect("titles get coefs error");
-            let (ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat) = self.read_coefs(title_number);
-            let obt_occs = obt_occs
-                .iter()
-                .map(|x| {
-                    if *x {
-                        return 2;
-                    } else {
-                        return 0;
-                    }
-                })
-                .collect();
-            Coefs::new(ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat)
-        } else if self.marks.contains_key("coefs_a") && self.marks.contains_key("coefs_b") {
-            let title_number_a = *self.marks.get("coefs_a").expect("titles get coefs_a error");
-            let title_number_b = *self.marks.get("coefs_b").expect("titles get coefs_b error");
-            let (ato_atms, ato_shls, ato_syms, mut obt_engs, mut obt_occs, cmat_a) = self.read_coefs(title_number_a);
-            let coefs_b = self.read_coefs(title_number_b);
-            obt_engs.extend_from_slice(&coefs_b.3);
-            obt_occs.extend_from_slice(&coefs_b.4);
-            let cmat = concatenate(Axis(1), &[cmat_a.view(), coefs_b.5.view()]).expect("矩阵拼接失败");
-            let obt_occs = obt_occs
-                .iter()
-                .map(|x| {
-                    if *x {
-                        return 1;
-                    } else {
-                        return 0;
-                    }
-                })
-                .collect();
-            Coefs::new(ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat)
+    fn get_coefs(&self) -> Option<Coefs> {
+        let charge = self.charge;
+        let multip = self.multip;
+        let crgs = self.read_geome(None).0;
+        let total = crgs.iter().sum::<usize>();
+        let [nela, nelb] = charge_number(charge, multip, total);
+        let coefs = self.read_coefs();
+        if let Some(coefs) = coefs {
+            let (ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat) = coefs;
+            let nobt = obt_engs.len();
+            let mut obt_occs = vec![0.0; nobt];
+            if nela == nelb {
+                for i in 0..nela {
+                    obt_occs[i] = 2.0;
+                }
+            } else {
+                for i in 0..nela {
+                    obt_occs[i] = 1.0;
+                }
+                for i in 0..nelb {
+                    obt_occs[i + nobt / 2] = 1.0;
+                }
+            }
+            Some(Coefs::new_ref(ato_atms, ato_shls, ato_syms, obt_engs, &obt_occs, cmat))
         } else {
-            log::error!("没有找到分子轨道");
-            Coefs::blank()
-        };
-        coefs
+            None
+        }
     }
 }
