@@ -9,17 +9,23 @@ use crate::datas::elems::sym2atm;
 use crate::reader::charge_number;
 use crate::reader::{Reader, read_lines};
 
+/// 高斯输入文件(.gjf)读取器
 pub struct GjfReader {
     path: String,
     lines: Vec<String>,
 }
 
 impl GjfReader {
+    /// 创建GjfReader实例
     pub fn new(path: &str) -> Self {
         let lines = read_lines(path);
-        Self { path: path.to_string(), lines }
+        Self {
+            path: path.to_string(),
+            lines,
+        }
     }
 
+    /// 读取几何结构
     pub fn read_geome(&self) -> (Vec<usize>, Vec<[f64; 3]>) {
         let mut atms = vec![];
         let mut xyzs = vec![];
@@ -39,7 +45,8 @@ impl GjfReader {
         (atms, xyzs)
     }
 
-    pub fn read_neles(&self) -> [usize; 2] {
+    /// 读取电荷和自旋多重度
+    pub fn read_charge(&self) -> (isize, usize) {
         let s0 = Regex::new(r"^ *(-?\d+) +(-?\d+)").expect("正则表达式生成失败");
         let mut C = 0; // 电荷
         let mut S = 0; // 自旋
@@ -58,13 +65,10 @@ impl GjfReader {
             exit(0)
         }
         let (atms, _) = self.read_geome();
-        let mut N = 0; // 总电子数
-        for atm in atms.iter() {
-            N += *atm as usize;
-        }
-        charge_number(C, S, N)
+        (C, S)
     }
 
+    /// 读取作业关键词
     pub fn read_job(&self) -> String {
         let mut job = String::new();
         for line in self.lines.iter() {
@@ -81,7 +85,10 @@ impl Reader for GjfReader {
         let (atms, xyzs) = self.read_geome();
         let crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
         let mut geome = Atoms::new(&atms, &xyzs, &crgs);
-        geome.neles = self.read_neles();
+        let N = atms.iter().map(|atm| *atm as usize).sum::<usize>();
+        let (C, S) = self.read_charge();
+
+        geome.neles = charge_number(C, S, N);
         geome
     }
     fn get_basis(&self) -> Option<Basis> {

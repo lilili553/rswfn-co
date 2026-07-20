@@ -17,39 +17,128 @@ use std::{
 #[cfg(feature = "use-cint")]
 unsafe extern "C" {
     fn CINTcgto_cart(bas_id: c_int, bas: *const c_int) -> c_int;
-    fn cint1e_ovlp_cart(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
-    fn cint1e_kin_cart(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
-    fn cint1e_nuc_cart(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
+    fn cint1e_ovlp_cart(
+        buf: *mut c_double,
+        shls: *const c_int,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+    ) -> c_int;
+    fn cint1e_kin_cart(
+        buf: *mut c_double,
+        shls: *const c_int,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+    ) -> c_int;
+    fn cint1e_nuc_cart(
+        buf: *mut c_double,
+        shls: *const c_int,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+    ) -> c_int;
 
     fn CINTcgto_spheric(bas_id: c_int, bas: *const c_int) -> c_int;
-    fn cint1e_ovlp_sph(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
-    fn cint1e_kin_sph(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
-    fn cint1e_nuc_sph(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
+    fn cint1e_ovlp_sph(
+        buf: *mut c_double,
+        shls: *const c_int,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+    ) -> c_int;
+    fn cint1e_kin_sph(
+        buf: *mut c_double,
+        shls: *const c_int,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+    ) -> c_int;
+    fn cint1e_nuc_sph(
+        buf: *mut c_double,
+        shls: *const c_int,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+    ) -> c_int;
 
-    fn cint2e_cart(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double, opt: *mut c_void) -> c_int;
-    fn cint2e_cart_optimizer(opt: *mut *mut c_void, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
+    fn cint2e_cart(
+        buf: *mut c_double,
+        shls: *const c_int,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+        opt: *mut c_void,
+    ) -> c_int;
+    fn cint2e_cart_optimizer(
+        opt: *mut *mut c_void,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+    ) -> c_int;
 
-    fn cint2e_sph(buf: *mut c_double, shls: *const c_int, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double, opt: *mut c_void) -> c_int;
-    fn cint2e_sph_optimizer(opt: *mut *mut c_void, atm: *const c_int, natm: c_int, bas: *const c_int, nbas: c_int, env: *const c_double) -> c_int;
+    fn cint2e_sph(
+        buf: *mut c_double,
+        shls: *const c_int,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+        opt: *mut c_void,
+    ) -> c_int;
+    fn cint2e_sph_optimizer(
+        opt: *mut *mut c_void,
+        atm: *const c_int,
+        natm: c_int,
+        bas: *const c_int,
+        nbas: c_int,
+        env: *const c_double,
+    ) -> c_int;
 
     fn CINTdel_optimizer(opt: *mut *mut c_void);
 
     fn CINTgto_norm(ang: c_int, alp: c_double) -> c_double;
 }
 
+/// libcint绑定的积分计算器
+///
+/// 封装libcint库的C接口,提供高效的电子积分计算。
 #[cfg(feature = "use-cint")]
 pub struct Cint<'m> {
+    /// 分子结构引用
     pub mole: &'m Mole,
+    /// libcint的atm数组
     pub atm: Vec<i32>,
+    /// libcint的bas数组
     pub bas: Vec<i32>,
+    /// libcint的env数组
     pub env: Vec<f64>,
-    // pub env_raw: Vec<f64>,
-    pub nato: [usize; 2], // [nsph,ncar]
+    /// 原子轨道数量 [球谐, 笛卡尔]
+    pub nato: [usize; 2],
+    /// 校正系数 [球谐, 笛卡尔]
     pub fixs: [Vec<f64>; 2],
 }
 
 #[cfg(feature = "use-cint")]
 impl<'m> Cint<'m> {
+    /// 创建Cint实例
     pub fn new(mole: &'m Mole) -> Self {
         let natm = mole.atoms.len();
         let map_shl = mole.basis.map_shl();
@@ -112,9 +201,17 @@ impl<'m> Cint<'m> {
             [vals_sph, vals_car]
         };
 
-        Self { mole, atm, bas, env, nato, fixs }
+        Self {
+            mole,
+            atm,
+            bas,
+            env,
+            nato,
+            fixs,
+        }
     }
 
+    /// 获取校正系数
     pub fn get_fixs(&self, form: &str) -> &Vec<f64> {
         match form {
             "sph" => &self.fixs[0],
@@ -123,6 +220,7 @@ impl<'m> Cint<'m> {
         }
     }
 
+    /// 对单电子积分矩阵应用校正系数
     pub fn fix_int1e(&self, int1e: &mut Array2<f64>, form: &str) {
         let vals = self.get_fixs(form);
         let nato = vals.len();
@@ -133,6 +231,7 @@ impl<'m> Cint<'m> {
         }
     }
 
+    /// 对双电子积分张量应用校正系数
     pub fn fix_int2e(&self, int2e: &mut Array4<f64>, form: &str) {
         let vals = self.get_fixs(form);
         let nato = vals.len();
@@ -147,6 +246,7 @@ impl<'m> Cint<'m> {
         }
     }
 
+    /// 计算单电子积分
     pub fn calc_int1e(&self, form: &str, cals: [usize; 3]) -> [Array2<f64>; 3] {
         let [mut smat, mut tmat, mut vmat] = match form {
             "sph" => calc_int1e_sph(self.nato[0], &self.atm, &self.bas, &self.env, cals),
@@ -168,6 +268,7 @@ impl<'m> Cint<'m> {
         }
         [smat, tmat, vmat]
     }
+    /// 计算双电子积分
     pub fn calc_int2e(&self, form: &str) -> Array4<f64> {
         let mut mat2e = match form {
             "sph" => calc_int2e_sph(self.nato[0], &self.atm, &self.bas, &self.env),
@@ -185,7 +286,7 @@ impl<'m> Cint<'m> {
         mat2e
     }
 
-    // 将单电子积分的原子轨道顺序转为和高斯一致
+    /// 将单电子积分的原子轨道顺序转为和高斯一致
     pub fn ord_int1e(&self, mat1e_raw: &Array2<f64>, form: &str) -> Array2<f64> {
         let mut mat1e_fix = mat1e_raw.clone();
         let uplo = self.mole.basis.map_shl().uplo(form);
@@ -211,6 +312,7 @@ impl<'m> Cint<'m> {
         mat1e_fix
     }
 
+    /// 将双电子积分的原子轨道顺序转为和高斯一致
     pub fn ord_int2e(&self, mat2e_raw: Array4<f64>, form: &str) -> Array4<f64> {
         let mut mat2e_fix = mat2e_raw.clone();
         let uplo = self.mole.basis.map_shl().uplo(form);
@@ -235,7 +337,8 @@ impl<'m> Cint<'m> {
                             for j in 0..lenj {
                                 for k in 0..lenk {
                                     for l in 0..lenl {
-                                        mat2e_fix[(ui + i, uj + j, uk + k, ul + l)] = mat2e_raw[(ui + idxi[i], uj + idxj[j], uk + idxk[k], ul + idxl[l])];
+                                        mat2e_fix[(ui + i, uj + j, uk + k, ul + l)] =
+                                            mat2e_raw[(ui + idxi[i], uj + idxj[j], uk + idxk[k], ul + idxl[l])];
                                     }
                                 }
                             }
@@ -248,6 +351,9 @@ impl<'m> Cint<'m> {
     }
 }
 
+/// 归一化基函数
+///
+/// 对每个基函数应用CINTgto_norm归一化因子。
 #[cfg(feature = "use-cint")]
 pub fn norm_basis(atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>) -> Vec<f64> {
     let mut env_new = env.clone();
@@ -269,9 +375,17 @@ pub fn norm_basis(atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>) -> Vec<f64> {
     env_new
 }
 
-// 计算单电子积分
+/// 计算球谐单电子积分
+///
+/// 调用libcint的球谐积分函数,计算重叠、动能和核引积分。
 #[cfg(feature = "use-cint")]
-pub fn calc_int1e_sph(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>, cals: [usize; 3]) -> [Array2<f64>; 3] {
+pub fn calc_int1e_sph(
+    nato: usize,
+    atm: &Vec<i32>,
+    bas: &Vec<i32>,
+    env: &Vec<f64>,
+    cals: [usize; 3],
+) -> [Array2<f64>; 3] {
     let nbas = bas.len() / 8;
     let natm = atm.len() / 6;
     let mut smat = Array2::<f64>::zeros((nato, nato).f()); // 重叠矩阵
@@ -310,21 +424,48 @@ pub fn calc_int1e_sph(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
                 let shape = (dimi, dimj);
                 if cals[0] == 1 {
                     // 计算重叠积分
-                    cint1e_ovlp_sph(buf.as_mut_ptr(), shls.as_ptr(), atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr());
+                    cint1e_ovlp_sph(
+                        buf.as_mut_ptr(),
+                        shls.as_ptr(),
+                        atm.as_ptr(),
+                        natm as c_int,
+                        bas.as_ptr(),
+                        nbas as c_int,
+                        env.as_ptr(),
+                    );
                     let buf_array = Array::from_shape_vec(shape.f(), buf.clone()).unwrap();
-                    smat.slice_mut(s![loci..loci + dimi, locj..locj + dimj]).assign(&buf_array);
+                    smat.slice_mut(s![loci..loci + dimi, locj..locj + dimj])
+                        .assign(&buf_array);
                 }
                 if cals[1] == 1 {
                     // 计算动能积分
-                    cint1e_kin_sph(buf.as_mut_ptr(), shls.as_ptr(), atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr());
+                    cint1e_kin_sph(
+                        buf.as_mut_ptr(),
+                        shls.as_ptr(),
+                        atm.as_ptr(),
+                        natm as c_int,
+                        bas.as_ptr(),
+                        nbas as c_int,
+                        env.as_ptr(),
+                    );
                     let buf_array = Array::from_shape_vec(shape.f(), buf.clone()).unwrap();
-                    tmat.slice_mut(s![loci..loci + dimi, locj..locj + dimj]).assign(&buf_array);
+                    tmat.slice_mut(s![loci..loci + dimi, locj..locj + dimj])
+                        .assign(&buf_array);
                 }
                 if cals[2] == 1 {
                     // 计算核引积分
-                    cint1e_nuc_sph(buf.as_mut_ptr(), shls.as_ptr(), atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr());
+                    cint1e_nuc_sph(
+                        buf.as_mut_ptr(),
+                        shls.as_ptr(),
+                        atm.as_ptr(),
+                        natm as c_int,
+                        bas.as_ptr(),
+                        nbas as c_int,
+                        env.as_ptr(),
+                    );
                     let buf_array = Array::from_shape_vec(shape.f(), buf.clone()).unwrap();
-                    vmat.slice_mut(s![loci..loci + dimi, locj..locj + dimj]).assign(&buf_array);
+                    vmat.slice_mut(s![loci..loci + dimi, locj..locj + dimj])
+                        .assign(&buf_array);
                 }
             }
         }
@@ -332,9 +473,17 @@ pub fn calc_int1e_sph(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
     return [smat, tmat, vmat];
 }
 
-// 计算单电子积分
+/// 计算笛卡尔单电子积分
+///
+/// 调用libcint的笛卡尔积分函数,计算重叠、动能和核引积分。
 #[cfg(feature = "use-cint")]
-pub fn calc_int1e_car(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>, cals: [usize; 3]) -> [Array2<f64>; 3] {
+pub fn calc_int1e_car(
+    nato: usize,
+    atm: &Vec<i32>,
+    bas: &Vec<i32>,
+    env: &Vec<f64>,
+    cals: [usize; 3],
+) -> [Array2<f64>; 3] {
     let nbas = bas.len() / 8;
     let natm = atm.len() / 6;
     let mut smat = Array2::<f64>::zeros((nato, nato).f()); // 重叠矩阵
@@ -373,21 +522,48 @@ pub fn calc_int1e_car(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
                 let shape = (dimi, dimj);
                 if cals[0] == 1 {
                     // println!("计算重叠积分");
-                    cint1e_ovlp_cart(buf.as_mut_ptr(), shls.as_ptr(), atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr());
+                    cint1e_ovlp_cart(
+                        buf.as_mut_ptr(),
+                        shls.as_ptr(),
+                        atm.as_ptr(),
+                        natm as c_int,
+                        bas.as_ptr(),
+                        nbas as c_int,
+                        env.as_ptr(),
+                    );
                     let buf_array = Array::from_shape_vec(shape.f(), buf.clone()).unwrap();
-                    smat.slice_mut(s![loci..loci + dimi, locj..locj + dimj]).assign(&buf_array);
+                    smat.slice_mut(s![loci..loci + dimi, locj..locj + dimj])
+                        .assign(&buf_array);
                 }
                 if cals[1] == 1 {
                     // println!("计算动能积分");
-                    cint1e_kin_cart(buf.as_mut_ptr(), shls.as_ptr(), atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr());
+                    cint1e_kin_cart(
+                        buf.as_mut_ptr(),
+                        shls.as_ptr(),
+                        atm.as_ptr(),
+                        natm as c_int,
+                        bas.as_ptr(),
+                        nbas as c_int,
+                        env.as_ptr(),
+                    );
                     let buf_array = Array::from_shape_vec(shape.f(), buf.clone()).unwrap();
-                    tmat.slice_mut(s![loci..loci + dimi, locj..locj + dimj]).assign(&buf_array);
+                    tmat.slice_mut(s![loci..loci + dimi, locj..locj + dimj])
+                        .assign(&buf_array);
                 }
                 if cals[2] == 1 {
                     // println!("计算核引积分");
-                    cint1e_nuc_cart(buf.as_mut_ptr(), shls.as_ptr(), atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr());
+                    cint1e_nuc_cart(
+                        buf.as_mut_ptr(),
+                        shls.as_ptr(),
+                        atm.as_ptr(),
+                        natm as c_int,
+                        bas.as_ptr(),
+                        nbas as c_int,
+                        env.as_ptr(),
+                    );
                     let buf_array = Array::from_shape_vec(shape.f(), buf.clone()).unwrap();
-                    vmat.slice_mut(s![loci..loci + dimi, locj..locj + dimj]).assign(&buf_array);
+                    vmat.slice_mut(s![loci..loci + dimi, locj..locj + dimj])
+                        .assign(&buf_array);
                 }
             }
         }
@@ -395,6 +571,9 @@ pub fn calc_int1e_car(nato: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
     return [smat, tmat, vmat];
 }
 
+/// 计算球谐双电子积分
+///
+/// 调用libcint的球谐双电子积分函数,使用优化器加速计算。
 #[cfg(feature = "use-cint")]
 pub fn calc_int2e_sph(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>) -> Array4<f64> {
     let natm = atm.len() / 6; // 原子数量
@@ -422,7 +601,14 @@ pub fn calc_int2e_sph(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
     let mut opt: *mut c_void = std::ptr::null_mut();
     unsafe {
         // println!("开始双电子积分优化");
-        cint2e_sph_optimizer(&mut opt, atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr());
+        cint2e_sph_optimizer(
+            &mut opt,
+            atm.as_ptr(),
+            natm as c_int,
+            bas.as_ptr(),
+            nbas as c_int,
+            env.as_ptr(),
+        );
 
         let mut dims = vec![0 as usize; nbas]; // 每个基函数在矩阵中的起始位置
         for i in 0..nbas {
@@ -449,10 +635,25 @@ pub fn calc_int2e_sph(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
                         let mut buf = vec![0.0f64; dimi * dimj * dimk * diml];
                         let shls = [i as c_int, j as c_int, k as c_int, l as c_int];
                         // println!("双电子积分:{i}{j}{k}{l}");
-                        cint2e_sph(buf.as_mut_ptr(), shls.as_ptr(), atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr(), opt);
+                        cint2e_sph(
+                            buf.as_mut_ptr(),
+                            shls.as_ptr(),
+                            atm.as_ptr(),
+                            natm as c_int,
+                            bas.as_ptr(),
+                            nbas as c_int,
+                            env.as_ptr(),
+                            opt,
+                        );
                         let shape = (dimi, dimj, dimk, diml);
                         let buf_array = Array::from_shape_vec(shape.f(), buf).unwrap();
-                        emat.slice_mut(s![loci..loci + dimi, locj..locj + dimj, lock..lock + dimk, locl..locl + diml]).assign(&buf_array);
+                        emat.slice_mut(s![
+                            loci..loci + dimi,
+                            locj..locj + dimj,
+                            lock..lock + dimk,
+                            locl..locl + diml
+                        ])
+                        .assign(&buf_array);
                     }
                 }
             }
@@ -463,7 +664,9 @@ pub fn calc_int2e_sph(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
     return emat;
 }
 
-// 计算双电子积分
+/// 计算笛卡尔双电子积分
+///
+/// 调用libcint的笛卡尔双电子积分函数,使用优化器加速计算。
 #[cfg(feature = "use-cint")]
 pub fn calc_int2e_car(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64>) -> Array4<f64> {
     let natm = atm.len() / 6; // 原子数量
@@ -491,7 +694,14 @@ pub fn calc_int2e_car(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
     let mut opt: *mut c_void = std::ptr::null_mut();
     unsafe {
         // println!("开始双电子积分优化");
-        cint2e_cart_optimizer(&mut opt, atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr());
+        cint2e_cart_optimizer(
+            &mut opt,
+            atm.as_ptr(),
+            natm as c_int,
+            bas.as_ptr(),
+            nbas as c_int,
+            env.as_ptr(),
+        );
 
         let mut dims = vec![0 as usize; nbas]; // 每个基函数在矩阵中的起始位置
         for i in 0..nbas {
@@ -517,10 +727,25 @@ pub fn calc_int2e_car(nmat: usize, atm: &Vec<i32>, bas: &Vec<i32>, env: &Vec<f64
                         assert!(locl + diml <= nmat, "数组越界");
                         let mut buf = vec![0.0f64; dimi * dimj * dimk * diml];
                         let shls = [i as c_int, j as c_int, k as c_int, l as c_int];
-                        cint2e_cart(buf.as_mut_ptr(), shls.as_ptr(), atm.as_ptr(), natm as c_int, bas.as_ptr(), nbas as c_int, env.as_ptr(), opt);
+                        cint2e_cart(
+                            buf.as_mut_ptr(),
+                            shls.as_ptr(),
+                            atm.as_ptr(),
+                            natm as c_int,
+                            bas.as_ptr(),
+                            nbas as c_int,
+                            env.as_ptr(),
+                            opt,
+                        );
                         let shape = (dimi, dimj, dimk, diml);
                         let buf_array = Array::from_shape_vec(shape.f(), buf).unwrap();
-                        emat.slice_mut(s![loci..loci + dimi, locj..locj + dimj, lock..lock + dimk, locl..locl + diml]).assign(&buf_array);
+                        emat.slice_mut(s![
+                            loci..loci + dimi,
+                            locj..locj + dimj,
+                            lock..lock + dimk,
+                            locl..locl + diml
+                        ])
+                        .assign(&buf_array);
                     }
                 }
             }

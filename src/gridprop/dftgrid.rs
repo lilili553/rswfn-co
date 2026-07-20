@@ -8,77 +8,34 @@ use crate::datas::{elems, lebedev};
 use crate::maths;
 // use crate::utils;
 
+/// DFT 网格计算器，用于生成球面、径向和分子格点
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
 }
 
 impl<'m> Calculator<'m> {
+    /// 创建一个新的 Calculator 实例
     pub fn new(mole: &'m Mole) -> Self {
         Calculator { mole }
     }
 
-    // 球面格点
-    pub fn sph_grids(&self, nsph: usize) -> (Vec<[f64; 3]>, Vec<f64>) {
-        match nsph {
-            6 => lebedev::ld0006(),
-            14 => lebedev::ld0014(),
-            26 => lebedev::ld0026(),
-            38 => lebedev::ld0038(),
-            50 => lebedev::ld0050(),
-            74 => lebedev::ld0074(),
-            86 => lebedev::ld0086(),
-            110 => lebedev::ld0110(),
-            146 => lebedev::ld0146(),
-            170 => lebedev::ld0170(),
-            194 => lebedev::ld0194(),
-            230 => lebedev::ld0230(),
-            266 => lebedev::ld0266(),
-            302 => lebedev::ld0302(),
-            350 => lebedev::ld0350(),
-            434 => lebedev::ld0434(),
-            590 => lebedev::ld0590(),
-            _ => {
-                log::error!("非法nsph:{}", nsph);
-                lebedev::ld0074()
-            }
-        }
-    }
-
-    // 计算dft原子径向格点
-    pub fn rad_grids(
-        &self,
-        R: f64,      // 原子半径
-        nrad: usize, // 径向格点数量
-    ) -> (Vec<f64>, Vec<f64>) {
-        // let R = 1.0;
-        let mut rs = vec![0.0; nrad];
-        let mut ws = vec![0.0; nrad];
-        for i in 1..=nrad {
-            let xi = f64::cos(i as f64 * PI / (nrad as f64 + 1.0));
-            let ri = R * (1.0 + xi) / (1.0 - xi);
-            let wi = 2.0 * PI / (nrad as f64 + 1.0) * R.powi(3) * (1.0 + xi).powf(2.5) / (1.0 - xi).powf(3.5);
-            rs[i - 1] = ri;
-            ws[i - 1] = wi * 4.0 * PI;
-        }
-        return (rs, ws);
-    }
-
     // 计算原子格点，径向格点与球面格点的结合
     #[rustfmt::skip]
+    /// 计算单个原子的三维网格（径向×球面）
     pub fn atm_grids(
         &self,
         iatm: usize,
         nrad: usize, // 径向格点数量
         nsph: usize, // 球面格点函数
     ) -> (Vec<[f64; 3]>, Vec<f64>) {
-        let (sph_grids, sph_weits) = self.sph_grids(nsph);
+        let (sph_grids, sph_weits) = sph_grids(nsph);
         let nsph = sph_grids.len(); //球面格点数量
         let atom = self.mole.atoms().get(iatm);
         let [ax, ay, az] = atom.xyz;
         let mut grids = vec![[0.0; 3]; nrad * nsph];
         let mut weits = vec![0.0; nrad * nsph];
         let R = atom.rad;
-        let (rs, ws) = self.rad_grids(R, nrad);
+        let (rs, ws) = rad_grids(R, nrad);
         for i in 0..nrad {
             let r = rs[i]; // 径向距离
             for j in 0..nsph {
@@ -91,18 +48,19 @@ impl<'m> Calculator<'m> {
     }
 
     #[rustfmt::skip]
+    /// 计算指定元素的原子网格（根据核电荷数）
     pub fn elm_grids(
         &self,
         nuc: usize,
         nrad: usize, // 径向格点数量
         nsph: usize, // 球面格点函数
     ) -> (Vec<[f64; 3]>, Vec<f64>) {
-        let (sph_grids, sph_weits) = self.sph_grids(nsph);
+        let (sph_grids, sph_weits) = sph_grids(nsph);
         let nsph = sph_grids.len(); //球面格点数量
         let mut grids = vec![[0.0; 3]; nrad * nsph];
         let mut weits = vec![0.0; nrad * nsph];
         let R = elems::atm2rad(nuc);
-        let (rs, ws) = self.rad_grids(R, nrad);
+        let (rs, ws) = rad_grids(R, nrad);
         for i in 0..nrad {
             let r = rs[i]; // 径向距离
             for j in 0..nsph {
@@ -115,6 +73,7 @@ impl<'m> Calculator<'m> {
     }
 
     // 将原子的权重映射到分子中 Becke分区方法
+    /// 使用 Becke 分区方法将原子权重映射到分子中
     pub fn a2m_weits(
         &self,
         iatm: usize,               // 第多少个原子
@@ -171,13 +130,18 @@ impl<'m> Calculator<'m> {
             }
 
             let sum_wt: f64 = wt.iter().sum();
-            let rat = if sum_wt.abs() > 1e-12 { wt[iatm as usize] / sum_wt } else { 0.0 };
+            let rat = if sum_wt.abs() > 1e-12 {
+                wt[iatm as usize] / sum_wt
+            } else {
+                0.0
+            };
             a2m_weits[g] = atm_weits[g] * rat;
         }
         return a2m_weits;
     }
 
     // 计算分子格点 nrad: 径向格点数量； fsph: 球面格点函数
+    /// 计算全分子格点及其权重
     pub fn mol_grids(&self, nrad: usize, fsph: usize) -> (Vec<[f64; 3]>, Vec<f64>) {
         let natm = self.mole.atoms().len();
         let mut mol_grids: Vec<[f64; 3]> = Vec::new();
@@ -197,6 +161,7 @@ impl<'m> Calculator<'m> {
         return (mol_grids, mol_weits);
     }
 
+    /// 计算指定原子片段的网格和权重
     pub fn frag_grids(&self, frag: &Vec<usize>) -> (Vec<[f64; 3]>, Vec<f64>) {
         let mut grids = Vec::new();
         let mut weits = Vec::new();
@@ -208,4 +173,52 @@ impl<'m> Calculator<'m> {
         }
         (grids, weits)
     }
+}
+
+// 球面格点
+/// 获取 Lebedev 球面格点及其权重
+/// nsph: 球面格点数 可选值为: 6, 14, 26, 38, 50, 74, 86, 110, 146, 170, 194, 230, 266, 302, 350, 434, 590
+pub fn sph_grids(nsph: usize) -> (Vec<[f64; 3]>, Vec<f64>) {
+    match nsph {
+        006 => lebedev::ld0006(),
+        014 => lebedev::ld0014(),
+        026 => lebedev::ld0026(),
+        038 => lebedev::ld0038(),
+        050 => lebedev::ld0050(),
+        074 => lebedev::ld0074(),
+        086 => lebedev::ld0086(),
+        110 => lebedev::ld0110(),
+        146 => lebedev::ld0146(),
+        170 => lebedev::ld0170(),
+        194 => lebedev::ld0194(),
+        230 => lebedev::ld0230(),
+        266 => lebedev::ld0266(),
+        302 => lebedev::ld0302(),
+        350 => lebedev::ld0350(),
+        434 => lebedev::ld0434(),
+        590 => lebedev::ld0590(),
+        _ => {
+            log::error!(
+                "非法nsph:{}\n可选sph为 6, 14, 26, 38, 50, 74, 86, 110, 146, 170, 194, 230, 266, 302, 350, 434, 590",
+                nsph
+            );
+            lebedev::ld0074()
+        }
+    }
+}
+
+// 计算dft原子径向格点
+/// 计算 DFT 原子径向格点坐标和权重
+pub fn rad_grids(R: f64, nrad: usize) -> (Vec<f64>, Vec<f64>) {
+    // let R = 1.0;
+    let mut rs = vec![0.0; nrad];
+    let mut ws = vec![0.0; nrad];
+    for i in 1..=nrad {
+        let xi = f64::cos(i as f64 * PI / (nrad as f64 + 1.0));
+        let ri = R * (1.0 + xi) / (1.0 - xi);
+        let wi = 2.0 * PI / (nrad as f64 + 1.0) * R.powi(3) * (1.0 + xi).powf(2.5) / (1.0 - xi).powf(3.5);
+        rs[i - 1] = ri;
+        ws[i - 1] = wi * 4.0 * PI;
+    }
+    return (rs, ws);
 }

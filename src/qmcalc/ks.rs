@@ -9,16 +9,28 @@ use crate::maths::{self, calc_dmat};
 use crate::{funcs, utils};
 use ndarray::Array2;
 
+/// 闭壳层Kohn-Sham(密度泛函理论)计算器
+///
+/// 通过在格点上数值积分计算交换相关矩阵,自洽求解Kohn-Sham方程。
 pub struct RKS<'m> {
+    /// 分子结构引用
     pub mole: &'m Mole,
+    /// 所有格点的坐标
     pub grids: Vec<[f64; 3]>,
+    /// 所有格点的权重
     pub weits: Vec<f64>,
-    pub wfn0s: Vec<Vec<f64>>, // 所有原子轨道在所有格点处的波函数
+    /// 所有原子轨道在所有格点处的波函数值
+    pub wfn0s: Vec<Vec<f64>>,
+    /// 所有原子轨道在所有格点处的一阶梯度
     pub wfn1s: Vec<Vec<[f64; 3]>>,
+    /// 所有原子轨道在所有格点处的二阶梯度
     pub wfn2s: Vec<Vec<[[f64; 3]; 3]>>,
 }
 
 impl<'m> RKS<'m> {
+    /// 创建新的RKS计算器
+    ///
+    /// 初始化分子格点、权重及所有原子轨道在格点上的波函数值。
     pub fn new(mole: &'m Mole) -> Self {
         let grid_caler = gridprop::dftgrid::Calculator::new(mole);
         let (grids, weits) = grid_caler.mol_grids(100, 74);
@@ -36,7 +48,14 @@ impl<'m> RKS<'m> {
             wfn1s.push(wfn1);
             wfn2s.push(wfn2);
         }
-        Self { mole, grids, weits, wfn0s, wfn1s, wfn2s }
+        Self {
+            mole,
+            grids,
+            weits,
+            wfn0s,
+            wfn1s,
+            wfn2s,
+        }
     }
 
     // 计算交换相关矩阵
@@ -98,7 +117,16 @@ impl<'m> RKS<'m> {
         [jmat, kmat]
     }
 
-    fn calc_ele_eng(&self, dmat: &Array2<f64>, hmat: &Array2<f64>, jmat: &Array2<f64>, kmat: &Array2<f64>, xcmat: &Array2<f64>, zk: &Vec<f64>, rhos: &Vec<f64>) -> f64 {
+    fn calc_ele_eng(
+        &self,
+        dmat: &Array2<f64>,
+        hmat: &Array2<f64>,
+        jmat: &Array2<f64>,
+        kmat: &Array2<f64>,
+        xcmat: &Array2<f64>,
+        zk: &Vec<f64>,
+        rhos: &Vec<f64>,
+    ) -> f64 {
         let hcore_eng = (dmat * hmat).sum();
         let exact_x_eng = (dmat * (jmat + kmat * 0.2)).sum() * 0.5;
         let mut xc_eng = 0.0;
@@ -106,7 +134,10 @@ impl<'m> RKS<'m> {
             xc_eng += zk[i] * rhos[i] * self.weits[i];
         }
         // xc_eng *= 0.8;
-        println!("计算电子能量:{:>10.4},{:>10.4},{:>10.4}", hcore_eng, exact_x_eng, xc_eng);
+        println!(
+            "计算电子能量:{:>10.4},{:>10.4},{:>10.4}",
+            hcore_eng, exact_x_eng, xc_eng
+        );
         hcore_eng + exact_x_eng + xc_eng
     }
 
@@ -123,6 +154,7 @@ impl<'m> RKS<'m> {
         eng
     }
 
+    /// 执行KS-DFT自洽场计算
     pub fn run(&self) {
         // 准备电子积分
 
@@ -160,7 +192,15 @@ impl<'m> RKS<'m> {
             // 计算所有格点的电子密度
             let mut nele = 0.0;
             for g in 0..ngrid {
-                let (rho0, rho1, rho2) = gridprop::density::mol_rho_dm(ato_atms, &dmat, &self.wfn0s[g], &self.wfn1s[g], &self.wfn2s[g], atms, 2);
+                let (rho0, rho1, rho2) = gridprop::density::mol_rho_dm(
+                    ato_atms,
+                    &dmat,
+                    &self.wfn0s[g],
+                    &self.wfn1s[g],
+                    &self.wfn2s[g],
+                    atms,
+                    2,
+                );
                 nele += rho0 * self.weits[g];
                 rho0s[g] = rho0;
                 rho1s[g] = rho1;
@@ -182,7 +222,12 @@ impl<'m> RKS<'m> {
             let eng = self.calc_ele_eng(&dmat, &hmat, &jmat, &kmat, &xcmat, &zk, &rho0s);
             let del_eng = eng - ele_eng;
             ele_eng = eng;
-            println!("{:>2},电子能量:{:>10.4},分子能量:{:>10.4}", epoch, ele_eng, ele_eng + nuc_eng);
+            println!(
+                "{:>2},电子能量:{:>10.4},分子能量:{:>10.4}",
+                epoch,
+                ele_eng,
+                ele_eng + nuc_eng
+            );
             if epoch > 0 && del_eng.abs() < 1e-5 {
                 break;
             }

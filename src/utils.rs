@@ -2,10 +2,12 @@ use crate::maths;
 use ndarray::{Array1, Array2};
 use std::path::Path;
 
+/// 检查矩阵中是否包含 NaN 值
 pub fn has_nan(matrix: &Array2<f64>) -> bool {
     matrix.iter().any(|&x| x.is_nan())
 }
 
+/// 打印矩阵的数值，显示形状和每个元素
 pub fn show_matrix(mat: &Array2<f64>) {
     let nrow = mat.nrows();
     let ncol = mat.ncols();
@@ -18,7 +20,8 @@ pub fn show_matrix(mat: &Array2<f64>) {
     }
 }
 
-// 比较两个矩阵
+/// 比较两个矩阵的差值，打印最大差值和最小差值
+/// - show: 显示级别（0:不显示, 1:显示差值, 2:详细显示）
 pub fn comp_matrix(mat1: &Array2<f64>, mat2: &Array2<f64>, show: isize) {
     let mut del_max = f64::MIN;
     let mut del_min = f64::MAX;
@@ -59,7 +62,7 @@ pub fn comp_matrix(mat1: &Array2<f64>, mat2: &Array2<f64>, show: isize) {
     println!("最大差:{},最小差:{}", del_max, del_min);
 }
 
-// 判断两个两个矩阵是否相同
+/// 判断两个矩阵是否在误差范围内相同
 pub fn same_matrix(mat1: &Array2<f64>, mat2: &Array2<f64>) -> bool {
     let nrow = mat1.nrows();
     let ncol = mat1.ncols();
@@ -76,6 +79,7 @@ pub fn same_matrix(mat1: &Array2<f64>, mat2: &Array2<f64>) -> bool {
     true
 }
 
+/// 判断矩阵是否为对称矩阵
 pub fn symm_matrix(mat: &Array2<f64>) -> bool {
     let nrow = mat.nrows();
     let ncol = mat.nrows();
@@ -93,7 +97,7 @@ pub fn symm_matrix(mat: &Array2<f64>) -> bool {
     true
 }
 
-// 判断矩阵是否为正定矩阵
+/// 判断矩阵是否为正定矩阵
 pub fn posi_matrix(mat: &Array2<f64>) -> bool {
     let nrow = mat.nrows();
     let ncol = mat.nrows();
@@ -113,6 +117,7 @@ pub fn posi_matrix(mat: &Array2<f64>) -> bool {
     true
 }
 
+/// 将浮点数转换为 Fortran 格式字符串（如 0.12345E+02）
 pub fn fort_form(val: f64, pec: usize) -> String {
     let raw_text = format!("{:>.*E}", pec, val);
     let idx = raw_text.find("E").expect("解析E失败");
@@ -124,17 +129,19 @@ pub fn fort_form(val: f64, pec: usize) -> String {
     fmt_text
 }
 
+/// 获取文件扩展名
 pub fn file_type(path: &str) -> String {
     let path = Path::new(path);
     path.extension().map(|ext| ext.to_string_lossy().into_owned()).expect("文件拓展名获取失败")
 }
 
+/// 获取文件名（不含扩展名）
 pub fn file_name(path: &str) -> String {
     let path = Path::new(path);
     path.file_stem().map(|ext| ext.to_string_lossy().into_owned()).expect("文件名获取失败")
 }
 
-// 判断两个数组中的元素是否完全一样
+/// 判断两个数组中的元素是否完全相同
 pub fn all_same<T: PartialEq>(vals0: &Vec<T>, vals1: &Vec<T>) -> bool {
     if vals0.len() != vals1.len() {
         return false;

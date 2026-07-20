@@ -176,7 +176,9 @@ pub fn atm2sym(atm: usize) -> String {
     panic!("未知序号:{}", atm);
 }
 
-/// 原子有效核电荷数
+/// 返回指定原子的有效核电荷数（用于pi电子分析）
+/// - atm: 原子序号
+/// - neb: 参与共轭的电子数
 #[cached(size = 1024)]
 pub fn zeff(atm: usize, neb: usize) -> f64 {
     let sym = atm2sym(atm);
@@ -195,12 +197,12 @@ pub fn zeff(atm: usize, neb: usize) -> f64 {
     zeff
 }
 
-/// 原子半径
+/// 根据原子序号获取原子半径（原子单位）
 #[cached(size = 1024)]
 pub fn atm2rad(atm: usize) -> f64 {
     return ELEMS[atm].rad;
 }
-/// 原子有效核电荷数
+/// 根据原子序号获取元素在周期表中的行数
 #[cached(size = 1024)]
 pub fn atm2row(atm: usize) -> usize {
     if atm <= 2 {

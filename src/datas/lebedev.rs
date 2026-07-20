@@ -1,4 +1,5 @@
-/// rustfmt::skip
+/// 根据 code 类型生成球面上的点、坐标和权重
+/// Lebedev 网格生成辅助函数
 #[rustfmt::skip]
 pub fn gen_oh(code:isize,a:f64,b:f64,v:f64)->(
     Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>
@@ -54,10 +55,10 @@ pub fn gen_oh(code:isize,a:f64,b:f64,v:f64)->(
     else{
         panic!("cod不符合要求");
     }
-    
+
 }
 
-// 将参数数组解析为多个 gen_oh 的输入，并合并结果
+/// 将参数数组解析为多个 gen_oh 的输入，并合并结果为完整的 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld_fun(paras: &[[f64; 4]]) -> (Vec<[f64;3]>,Vec<f64>) {
     let mut grids = Vec::new();
@@ -80,13 +81,14 @@ pub fn ld_fun(paras: &[[f64; 4]]) -> (Vec<[f64;3]>,Vec<f64>) {
     (grids,weits)
 }
 
-// 示例函数：ld0006
+/// 生成6点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0006() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras = [[0.0, 0.0, 1.0 / 6.0, 1.0]]; // 注意：Python 中是 0.1666...
     ld_fun(&paras)
 }
 
+/// 生成14点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0014() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -96,6 +98,7 @@ pub fn ld0014() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成26点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0026() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -106,6 +109,7 @@ pub fn ld0026() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成38点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0038() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -115,6 +119,7 @@ pub fn ld0038() -> (Vec<[f64;3]>,Vec<f64>) {
     ];
     return ld_fun(&paras)}
 
+/// 生成50点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0050() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -125,6 +130,7 @@ pub fn ld0050() -> (Vec<[f64;3]>,Vec<f64>) {
     ];
     ld_fun(&paras)}
 
+/// 生成74点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0074() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -137,6 +143,7 @@ pub fn ld0074() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成86点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0086() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -149,6 +156,7 @@ pub fn ld0086() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成110点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0110() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -162,6 +170,7 @@ pub fn ld0110() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成146点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0146() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -176,6 +185,7 @@ pub fn ld0146() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成170点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0170() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -191,6 +201,7 @@ pub fn ld0170() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成194点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0194() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -207,6 +218,7 @@ pub fn ld0194() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成230点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0230() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -224,6 +236,7 @@ pub fn ld0230() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成266点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0266() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -242,6 +255,7 @@ pub fn ld0266() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成302点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0302() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -261,6 +275,7 @@ pub fn ld0302() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成350点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0350() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -281,6 +296,7 @@ pub fn ld0350() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成434点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0434() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -304,6 +320,7 @@ pub fn ld0434() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成590点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0590() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -331,6 +348,7 @@ pub fn ld0590() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成770点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0770() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -363,6 +381,7 @@ pub fn ld0770() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成974点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld0974() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -400,6 +419,7 @@ pub fn ld0974() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成1202点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld1202() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -443,6 +463,7 @@ pub fn ld1202() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成1454点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld1454() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -492,6 +513,7 @@ pub fn ld1454() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成1730点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld1730() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -548,6 +570,7 @@ pub fn ld1730() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成2030点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld2030() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -611,6 +634,7 @@ pub fn ld2030() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成2354点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld2354() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -682,6 +706,7 @@ pub fn ld2354() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成2702点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld2702() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -761,6 +786,7 @@ pub fn ld2702() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成3074点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld3074() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -849,6 +875,7 @@ pub fn ld3074() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成3470点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld3470() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -946,6 +973,7 @@ pub fn ld3470() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成3890点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld3890() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -1053,6 +1081,7 @@ pub fn ld3890() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成4334点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld4334() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -1170,6 +1199,7 @@ pub fn ld4334() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成4802点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld4802() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -1298,6 +1328,7 @@ pub fn ld4802() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成5294点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld5294() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[
@@ -1437,6 +1468,7 @@ pub fn ld5294() -> (Vec<[f64;3]>,Vec<f64>) {
     ld_fun(&paras)
 }
 
+/// 生成5810点 Lebedev 网格
 #[rustfmt::skip]
 pub fn ld5810() -> (Vec<[f64;3]>,Vec<f64>) {
     let paras=[

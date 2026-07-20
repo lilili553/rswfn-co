@@ -2,7 +2,7 @@
 
 use crate::maths::calc_dist;
 
-// 获得空间格点
+/// 生成三维空间格点坐标
 pub fn get_grids(nx: usize, ny: usize, nz: usize) -> Vec<[f64; 3]> {
     let mut grids = Vec::with_capacity(nx * ny * nz);
     for i in 0..nx {
@@ -15,6 +15,7 @@ pub fn get_grids(nx: usize, ny: usize, nz: usize) -> Vec<[f64; 3]> {
     grids
 }
 
+/// 计算原子到分子的权重分配（原子权重乘以Becke权重）
 pub fn a2m_weits(
     iatm: usize,
     atm_grids: &Vec<[f64; 3]>, // 原子格点坐标
@@ -72,18 +73,15 @@ pub fn a2m_weits(
 
         // 归一化并保存结果
         let sum_wt: f64 = wt.iter().sum();
-        let rat = if sum_wt.abs() > 1e-12 {
-            wt[iatm] / sum_wt
-        } else {
-            0.0
-        };
+        let rat = if sum_wt.abs() > 1e-12 { wt[iatm] / sum_wt } else { 0.0 };
         a2m_weits.push(atm_weits[g] * rat);
     }
 
     a2m_weits
 }
 
-// 计算原子(片段)间静电相互作用能 electrostatic interaction energy between atoms
+/// 计算原子（片段）间的静电相互作用能
+/// 包括电子-电子排斥、核-电子吸引和核-核排斥三项
 pub fn calc_EIEBA(
     fragA: &Vec<[f64; 4]>,  // 片段A的原子(核电荷数及坐标)
     fragB: &Vec<[f64; 4]>,  // 片段B的原子(核电荷数及坐标)

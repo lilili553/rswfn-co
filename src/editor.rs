@@ -2,15 +2,18 @@
 use crate::base::{Atoms, Mole};
 use ndarray::Array2;
 
+/// 分子结构编辑器，提供键的旋转和伸缩等几何操作
 pub struct Editor<'m> {
     pub mole: &'m Mole,
 }
 
 impl<'m> Editor<'m> {
+    /// 创建一个新的编辑器实例
     pub fn new(mole: &'m Mole) -> Self {
         Editor { mole }
     }
 
+    /// 获取与指定原子相连的原子分组（排除指定原子）
     pub fn get_group(&self, atm: usize, excludes: &Vec<usize>) -> Vec<usize> {
         let mut searched = vec![];
         let mut searches = vec![atm];
@@ -36,7 +39,11 @@ impl<'m> Editor<'m> {
         searched
     }
 
-    // 旋转一根键，返回旋转后的新分子,rtype 0:旋转g1、1:旋转g2、2:两个都旋转
+    /// 旋转一根化学键，返回旋转后的新分子
+    /// - a1: 第一个原子索引
+    /// - a2: 第二个原子索引
+    /// - angle: 旋转角度
+    /// - rtype: 旋转类型（0:旋转基团1, 1:旋转基团2, 2:两个基团都旋转）
     pub fn rotate_bond(&self, a1: usize, a2: usize, angle: f64, rtype: usize) -> Mole {
         let mut xyzs = self.mole.atoms().xyzs().clone();
         let g1 = self.get_group(a1, &vec![a2]);
@@ -71,7 +78,11 @@ impl<'m> Editor<'m> {
         mole
     }
 
-    // 伸缩一个键
+    /// 伸缩一根化学键，返回新的分子
+    /// - a1: 第一个原子索引
+    /// - a2: 第二个原子索引
+    /// - length: 伸缩长度
+    /// - stype: 伸缩类型（0:移动基团1, 1:移动基团2, 2:两个基团都移动）
     pub fn stretch_bond(&self, a1: usize, a2: usize, length: f64, stype: usize) -> Mole {
         let mut xyzs = self.mole.atoms().xyzs().clone();
         let g1 = self.get_group(a1, &vec![a2]);
@@ -102,6 +113,11 @@ impl<'m> Editor<'m> {
     }
 }
 
+/// 绕指定轴旋转一组点
+/// - points: 待旋转的点集
+/// - cent: 旋转中心
+/// - axis: 旋转轴
+/// - angle: 旋转角度
 pub fn rotate_points(points: &Vec<[f64; 3]>, cent: &[f64; 3], axis: &[f64; 3], angle: f64) -> Vec<[f64; 3]> {
     let [dx, dy, dz] = axis;
     let length = f64::sqrt(dx * dx + dy * dy + dz * dz);

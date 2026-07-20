@@ -5,6 +5,7 @@ use crate::base::{Ato, Atom, Atoms, Mole};
 use crate::datas::btrans::sym2lmn;
 use crate::datas::consts::BOHR;
 use crate::datas::{FACS, elems};
+use crate::gridprop::GridVals;
 use crate::maths;
 use std::f64::consts::PI;
 
@@ -47,12 +48,14 @@ pub fn stf(xyz: &[f64; 3], nuc: usize, Z: f64, nlm: &(usize, usize, isize)) -> f
     }
 }
 
+/// 波函数计算器，计算原子轨道和分子轨道在空间中的波函数值及其导数
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
     pub atms: &'m Vec<usize>,
 }
 
 impl<'m> Calculator<'m> {
+    /// 创建一个新的 Calculator 实例
     pub fn new(mole: &'m Mole) -> Self {
         let atms = mole.atoms().idxs();
         Calculator { mole: mole, atms: atms }
@@ -60,16 +63,15 @@ impl<'m> Calculator<'m> {
 
     // 计算一个点处的所有原子轨道的波函数
     // xyzs: 原子轨道坐标，coes和alps：每个基函数的系数和指数，每个基函数的数量是不确定的
+    /// 计算指定点处所有原子轨道的波函数及其一阶、二阶导数
     pub fn ato_wfn(
         &self,
         grid: &[f64; 3], // 空间中任意一点的坐标
         level: usize,
-    ) -> (Vec<f64>, Vec<[f64; 3]>, Vec<[[f64; 3]; 3]>) {
+    ) -> Vec<GridVals> {
         let atos = &self.mole.basis().atos().cars;
         let nato = atos.len();
-        let mut wfn0 = vec![0.0; nato];
-        let mut wfn1 = vec![[0.0; 3]; nato];
-        let mut wfn2 = vec![[[0.0; 3]; 3]; nato];
+        let mut vals = vec![GridVals::non(); nato];
         let atoms = &self.mole.atoms;
         for i in 0..nato {
             // 对每个原子进行循环
@@ -84,25 +86,24 @@ impl<'m> Calculator<'m> {
                 let xyz = [px, py, pz];
                 let lmn = atos[i].lmn();
                 let (val0, val1, val2) = cgf(&xyz, lmn, &alps, &coes, level);
-                wfn0[i] = val0;
-                wfn1[i] = val1;
-                wfn2[i] = val2;
+                vals[i].set(val0, val1, val2);
             }
         }
-        (wfn0, wfn1, wfn2)
+        vals
     }
 
     // 计算一个点处的某个分子轨道的波函数
+    /// 计算指定点处某个分子轨道的波函数及其一阶、二阶导数
     pub fn obt_wfn(
         &self,
         obt: usize, // 分子轨道索引
         grid: &[f64; 3],
         level: usize,
         // wfns: &(Vec<f64>, Vec<[f64; 3]>, Vec<[[f64; 3]; 3]>),
-    ) -> (f64, [f64; 3], [[f64; 3]; 3]) {
+    ) -> GridVals {
         let cmat_car = self.mole.coefs().get_cmat("car", self.mole.basis());
         let nato = cmat_car.nrows(); // 原子轨道数量
-        let (ato_wfn0, ato_wfn1, ato_wfn2) = self.ato_wfn(grid, level);
+        let wfns = self.ato_wfn(grid, level);
         let mut obt_wfn0 = 0.0;
         let mut obt_wfn1 = [0.0; 3];
         let mut obt_wfn2 = [[0.0; 3]; 3];
@@ -113,26 +114,27 @@ impl<'m> Calculator<'m> {
             if coef == 0.0 {
                 continue;
             };
-            obt_wfn0 += coef * ato_wfn0[ato];
+            obt_wfn0 += coef * wfns[ato].val0;
 
             if level >= 1 {
                 for i in 0..3 {
-                    obt_wfn1[i] += coef * ato_wfn1[ato][i];
+                    obt_wfn1[i] += coef * wfns[ato].val1[i];
                 }
             };
 
             if level >= 2 {
                 for i in 0..3 {
                     for j in 0..3 {
-                        obt_wfn2[i][j] += coef * ato_wfn2[ato][i][j];
+                        obt_wfn2[i][j] += coef * wfns[ato].val2[i][j];
                     }
                 }
             };
         }
-        (obt_wfn0, obt_wfn1, obt_wfn2)
+        GridVals::new(obt_wfn0, obt_wfn1, obt_wfn2)
     }
 }
 
+/// 计算指定点处所有原子轨道的波函数（自由函数版本）
 pub fn ato_wfn(
     atos: &Vec<Ato>,   // 原子轨道信息
     grid: &[f64; 3],   // 空间中任意一点的坐标
@@ -167,6 +169,7 @@ pub fn ato_wfn(
 }
 
 #[rustfmt::skip]
+/// 计算高斯基函数（Gaussian Type Function）及其一阶、二阶导数
 #[inline(always)]
 pub fn gtf(
     xyz: &[f64; 3], // 以原子为中心的格点坐标
@@ -193,16 +196,7 @@ pub fn gtf(
     // let nm=1.0;
     let exp_v = f64::exp(exp_x);
     let xyz_v=x.powi(l)*y.powi(m)*z.powi(n);
-    // let mut xyz_v=1.0;
-    // for _ in 0..l{
-    //     xyz_v *= x;
-    // }
-    // for _ in 0..m{
-    //     xyz_v *= y;
-    // }
-    // for _ in 0..n{
-    //     xyz_v *= z;
-    // }
+
     wfn0 = xyz_v * exp_v;
 
     if level >= 1 {
@@ -244,9 +238,15 @@ pub fn gtf(
     (wfn0, wfn1, wfn2)
 }
 
-// 计算收缩基函数（原子轨道），基函数的线性组合
+/// 计算收缩基函数（原子轨道），即基函数的线性组合
 #[inline(always)]
-pub fn cgf(xyz: &[f64; 3], lmn: &[usize; 3], alps: &Vec<f64>, coes: &Vec<f64>, level: usize) -> (f64, [f64; 3], [[f64; 3]; 3]) {
+pub fn cgf(
+    xyz: &[f64; 3],
+    lmn: &[usize; 3],
+    alps: &Vec<f64>,
+    coes: &Vec<f64>,
+    level: usize,
+) -> (f64, [f64; 3], [[f64; 3]; 3]) {
     let mut wfn0 = 0.0;
     let mut wfn1 = [0.0; 3];
     let mut wfn2 = [[0.0; 3]; 3];

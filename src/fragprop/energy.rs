@@ -5,16 +5,21 @@ use crate::base::Mole;
 use crate::gridprop::{density, dftgrid};
 use crate::maths;
 
+/// 碎片间静电相互作用能计算器
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
 }
 
 impl<'m> Calculator<'m> {
+    /// 创建一个新的 Calculator 实例
     pub fn new(mole: &'m Mole) -> Self {
         Calculator { mole }
     }
 
     // 计算原子(片段)间静电相互作用能 electrostatic interaction energy between atoms
+    /// 计算两个原子（片段）之间的静电相互作用能
+    ///
+    /// 返回 (电子-电子排斥, 核-电子吸引, 核-核排斥)
     pub fn EIEBA(&self, fragA: &Vec<usize>, fragB: &Vec<usize>) -> (f64, f64, f64) {
         let gridCaler = dftgrid::Calculator::new(&self.mole);
         let densCaler = density::Calculator::new(&self.mole);

@@ -21,7 +21,14 @@ const XS: [f64; 60] = [
     2.54237288, 2.59322034, 2.64406780, 2.69491525, 2.74576271, 2.79661017, 2.84745763, 2.89830508, 2.94915254, 3.00000000,
 ];
 
-// 两个基函数都在x轴上时的重叠积分，根据三次样条插值得到
+/// 计算两个位于x轴上的基函数的重叠积分
+///
+/// 使用三次样条插值方法计算重叠积分。当距离大于3.0时返回0.0。
+///
+/// # 参数
+/// - `zi`, `zj`: 两个原子的核电荷数
+/// - `pi`, `pj`: 轨道角动量类型
+/// - `dist`: 原子间距离
 pub fn get_integ_x(zi: usize, zj: usize, pi: usize, pj: usize, dist: f64) -> f64 {
     if dist > 3.0 {
         return 0.0;
@@ -41,7 +48,9 @@ pub fn get_integ_x(zi: usize, zj: usize, pi: usize, pj: usize, dist: f64) -> f64
     ((a * x + b) * x + c) * x + d
 }
 
-// 计算两个任意朝向的Pz轨道的重叠积分
+/// 计算两个任意朝向的Pz轨道的重叠积分
+///
+/// 通过将轨道投影到局部坐标系的三个轴上,分别计算各分量上的重叠积分并求和。
 pub fn get_integ_d(zi: usize, zj: usize, di: &Vec3, dj: &Vec3, stm: Stm, dist: f64) -> f64 {
     // println!("Di:{}", Di.norm());
     // println!("Dj:{}", Dj.norm());
@@ -67,6 +76,10 @@ pub fn get_integ_d(zi: usize, zj: usize, di: &Vec3, dj: &Vec3, stm: Stm, dist: f
     val
 }
 
+/// dHMO方法版本2,计算分子中的所有原子轨道
+///
+/// 基于扩展Hückel方法(Extended Hückel),构建重叠矩阵和哈密顿矩阵,
+/// 求解广义本征值问题,计算Mayer键级和电子布局。
 pub fn dhmo_calc_v2(mole: &Mole) {
     let dir_caler = atomprop::direction::Calculator::new(mole);
     let atoms = mole.atoms();

@@ -1,3 +1,6 @@
+/// 获取DHMO（双原子分子轨道）参数
+/// - Zi, Zj: 两个原子的核电荷数
+/// - Pi, Pj: 两个原子的周期数
 pub fn get_paras(Zi: usize, Zj: usize, Pi: usize, Pj: usize) -> [[f64; 4]; 59] {
     let paras = match (Zi, Zj, Pi, Pj) {
         (5, 5, 0, 0) => [

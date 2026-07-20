@@ -1,5 +1,4 @@
-// 生成fch文件
-
+/// Fch格式文件(.fch)写入器
 use ndarray::{Array2, s};
 use std::collections::HashMap;
 
@@ -9,14 +8,20 @@ use crate::utils;
 use crate::writer::Writer;
 
 pub struct FchWriter {
+    /// 分子电荷
     pub charge: isize,
+    /// 自旋多重度
     pub multip: usize,
+    /// 原子信息
     pub atoms: Atoms,
+    /// 基组信息
     pub basis: Basis,
+    /// 波函数信息
     pub coefs: Coefs,
 }
 
 impl FchWriter {
+    /// 创建FchWriter实例
     pub fn new() -> Self {
         Self {
             charge: 0,
@@ -27,6 +32,7 @@ impl FchWriter {
         }
     }
 
+    /// 从Mole构造FchWriter
     pub fn from_mole(mole: &Mole) -> Self {
         Self {
             charge: mole.charge(),
@@ -38,6 +44,7 @@ impl FchWriter {
     }
 
     #[rustfmt::skip]
+    /// 生成fch文件内容字符串
     pub fn build(&self)->String {
         let mut text = String::new();
         let atoms=&self.atoms;
@@ -125,6 +132,7 @@ impl FchWriter {
         text
     }
 
+    /// 保存到文件
     pub fn save(&self, path: &str) {
         let text = self.build();
         std::fs::write(path, text).expect("Unable to write file");

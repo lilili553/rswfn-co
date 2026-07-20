@@ -1,6 +1,7 @@
 use simplelog;
 
 #[rustfmt::skip]
+/// 初始化日志系统，同时输出到终端和日志文件
 pub fn init_log() {
     let file = std::fs::File::create("rswfn日志.txt").expect("创建日志文件失败");
     simplelog::CombinedLogger::init(vec![

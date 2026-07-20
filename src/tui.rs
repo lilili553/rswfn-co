@@ -13,29 +13,36 @@ fn input(tip: &str) -> String {
     txt
 }
 
+/// TUI 主界面，提供交互式功能选择
 pub struct Main {
     path: String,
 }
 
 impl Main {
+    /// 创建新的 TUI 主界面并启动用户交互
     pub fn new() -> Self {
         println!("欢迎使用rswfn: 基于rust的波函数分析工具");
         let path = input("请输入文件路径: ");
         Self { path }
     }
 
+    /// 进入原子属性子菜单
     pub fn atom_prop() {
         AtomProp {}.main();
     }
 
+    /// 进入化学键属性子菜单
     pub fn bond_prop() {}
 
+    /// 进入格点属性子菜单
     pub fn grid_prop() {}
 }
 
+/// 原子属性计算器
 struct AtomProp {}
 
 impl AtomProp {
+    /// 进入原子属性交互菜单，循环处理用户输入
     pub fn main(&self) {
         loop {
             println!("1.电子布局");
@@ -49,17 +56,20 @@ impl AtomProp {
         }
     }
 
+    /// 计算原子电荷/电子布局
     pub fn atom_charge(&self) {}
 }
 
 struct BondProp {}
 
+/// 格点属性计算器
 struct GridProp {}
 impl GridProp {
+    /// 进入格点属性交互菜单，支持输出分子轨道和电子密度到cube文件
     pub fn main(&self, mole: &Mole) {
         let mut grid_caler = gridprop::CubeGrid::new();
-        let [p0, p1] = mole.border();
-        grid_caler.set_v1(&p0, &p1, 0.2, 4.0);
+        let [p0, p1] = mole.border(4.0);
+        grid_caler.set_v1(&p0, &p1, 0.2, 0.0);
         let (shape, grids) = grid_caler.get();
         println!("1.分子轨道");
         println!("2.电子密度");
@@ -68,7 +78,7 @@ impl GridProp {
             "1" => {
                 let obt: usize = input("输入轨道序号: ").parse().expect("轨道序号错误");
                 let caler = gridprop::wfnfunc::Calculator::new(mole);
-                let vals = grids.iter().map(|grid| caler.obt_wfn(obt, grid, 0).0).collect();
+                let vals = grids.iter().map(|grid| caler.obt_wfn(obt, grid, 0).val0).collect();
                 vals
             }
             "2" => {

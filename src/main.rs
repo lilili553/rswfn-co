@@ -17,13 +17,13 @@ mod bondprop;
 mod gridprop;
 mod moleprop;
 mod orbtprop;
-mod tests;
 
 mod cli;
+mod dev;
 mod tui;
-
 use std;
 
+/// 程序入口，根据命令行参数决定启动 CLI 模式或 TUI 模式
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {

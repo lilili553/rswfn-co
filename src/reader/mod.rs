@@ -35,26 +35,39 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+/// 用于在文件中标记关键数据位置的索引集合
 pub struct Marks {
+    /// 标记名称到行号的映射
     pub marks: HashMap<String, usize>,
 }
 
 impl Marks {
+    /// 创建新的Marks实例
     pub fn new() -> Marks {
         Self { marks: HashMap::new() }
     }
 
+    /// 添加一个标记
     pub fn add(&mut self, marker: String, number: usize) {
         self.marks.insert(marker, number);
     }
 }
 
+/// 文件读取器trait
+///
+/// 定义从各种量子化学程序输出文件中读取分子信息的统一接口。
 pub trait Reader {
+    /// 获取分子中的原子信息
     fn get_atoms(&self) -> Atoms;
+    /// 获取基组信息(如果文件包含)
     fn get_basis(&self) -> Option<Basis>;
+    /// 获取波函数系数(如果文件包含)
     fn get_coefs(&self) -> Option<Coefs>;
 }
 
+/// 读取文件的全部行
+///
+/// 打开指定路径的文件,逐行读取并返回一个字符串向量。
 pub fn read_lines(path: &str) -> Vec<String> {
     let file = File::open(path).expect(format!("无法打开文件:{}\n", path).as_ref());
     let read = BufReader::new(file);
@@ -66,7 +79,7 @@ pub fn read_lines(path: &str) -> Vec<String> {
     texts
 }
 
-// 根据电荷和自旋多重度计算α和β电子数
+/// 根据电荷和自旋多重度计算α和β电子数
 pub fn charge_number(charge: isize, multip: usize, total: usize) -> [usize; 2] {
     let N = total as isize;
     let C = charge as isize;
@@ -90,6 +103,9 @@ pub enum FileType {
     Cub, // 格点文件
 }
 
+/// 判断文件类型
+///
+/// 根据文件扩展名返回对应的`FileType`枚举值。
 pub fn get_fileType(path: &str) -> FileType {
     if path.ends_with(".gjf") {
         return FileType::Gjf;
@@ -129,6 +145,7 @@ pub fn get_fileType(path: &str) -> FileType {
 
 use crate::datas::btrans;
 
+/// 确定每个壳层的基函数形式(球谐或笛卡尔)
 pub fn shl_forms(ato_atms: &Vec<usize>, ato_shls: &Vec<usize>, ato_syms: &Vec<String>) -> Vec<String> {
     let mut shl_form = vec![];
     let nato = ato_atms.len();
@@ -156,6 +173,7 @@ pub fn shl_forms(ato_atms: &Vec<usize>, ato_shls: &Vec<usize>, ato_syms: &Vec<St
 
 use crate::base::Shl;
 pub type BasData = (usize, usize, usize, f64, f64);
+/// 从原始基组数据构建Basis对象
 pub fn shl_basis(datas: &Vec<BasData>, forms: &Vec<String>) -> Basis {
     let mut keys = vec![];
     let mut shls = Vec::new();
@@ -166,7 +184,14 @@ pub fn shl_basis(datas: &Vec<BasData>, forms: &Vec<String>) -> Basis {
         if !keys.contains(&key) {
             keys.push(key);
             let form = forms[ishl].clone();
-            shls.push(Shl { atm, shl, ang, form, alps: vec![], coes: vec![] });
+            shls.push(Shl {
+                atm,
+                shl,
+                ang,
+                form,
+                alps: vec![],
+                coes: vec![],
+            });
             ishl += 1;
         }
         let nshl = shls.len();

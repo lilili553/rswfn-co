@@ -8,11 +8,16 @@ use crate::maths;
 use crate::{atomprop, utils};
 use ndarray::{Array1, Array2};
 
+/// 闭壳层半经验方法计算器
+///
+/// 忽略双电子积分,直接对角化核心哈密顿矩阵。
 pub struct RSE<'m> {
+    /// 分子结构引用
     pub mole: &'m Mole,
 }
 
 impl<'m> RSE<'m> {
+    /// 创建新的RSE计算器
     pub fn new(mole: &'m Mole) -> Self {
         Self { mole }
     }
@@ -27,7 +32,12 @@ impl<'m> RSE<'m> {
         (dmat * (tmat + vmat + fmat)).sum() * 0.5
     }
 
-    // 实现RSE方法，忽略双电子积分，直接对角化核心哈密顿矩阵
+    /// 执行半经验RSE计算
+    ///
+    /// 基于扩展Hückel近似,忽略双电子积分,直接对角化核心哈密顿矩阵。
+    ///
+    /// # 参数
+    /// - `lcs`: 是否使用局部坐标系
     pub fn calc_rse(&self, lcs: bool) -> (f64, Coefs) {
         let atos = self.mole.basis().atos();
         // let nato = atos.len();

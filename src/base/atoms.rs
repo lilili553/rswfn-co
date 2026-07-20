@@ -20,6 +20,10 @@ pub struct Stm {
 }
 
 impl Stm {
+    /// 检查局部坐标系是否为正交矩阵（即旋转矩阵）
+    ///
+    /// # Returns
+    /// - `true` 如果该矩阵是正交矩阵（逆矩阵等于转置矩阵）
     pub fn check(&self) -> bool {
         let mat_t = self.mat.t().to_owned();
         let mat_i = maths::inv(&self.mat);
@@ -27,6 +31,12 @@ impl Stm {
         same
     }
 
+    /// 从三个基向量创建局部坐标系
+    ///
+    /// # Parameters
+    /// - `ex`: x方向的单位基向量，长度为3的数组
+    /// - `ey`: y方向的单位基向量，长度为3的数组
+    /// - `ez`: z方向的单位基向量，长度为3的数组
     pub fn new(ex: [f64; 3], ey: [f64; 3], ez: [f64; 3]) -> Self {
         let [xx, xy, xz] = ex;
         let [yx, yy, yz] = ey;
@@ -36,12 +46,16 @@ impl Stm {
         Self { ex, ey, ez, mat, non }
     }
 
+    /// 创建一个空的局部坐标系（单位矩阵），标记为未设置
     pub fn blank() -> Self {
         let mut stm = Stm::new([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
         stm.non = true;
         stm
     }
 
+    /// 返回局部坐标系的所有9个分量值
+    ///
+    /// 顺序为：ex_x, ex_y, ex_z, ey_x, ey_y, ey_z, ez_x, ez_y, ez_z
     pub fn vals(&self) -> Vec<f64> {
         let [xx, xy, xz] = self.ex;
         let [yx, yy, yz] = self.ey;
@@ -49,6 +63,12 @@ impl Stm {
         vec![xx, xy, xz, yx, yy, yz, zx, zy, zz]
     }
 
+    /// 从3x3矩阵创建局部坐标系
+    ///
+    /// 矩阵的每一列对应一个基向量
+    ///
+    /// # Parameters
+    /// - `mat`: 3x3矩阵，每列为单位基向量
     pub fn from_mat(mat: Array2<f64>) -> Self {
         let mut es = [[0.0; 3]; 3];
         for i in 0..3 {
@@ -76,10 +96,15 @@ impl Stm {
         Stm::from_mat(dmat)
     }
 
+    /// 返回局部坐标系的三个基向量
     pub fn dirs(&self) -> [[f64; 3]; 3] {
         [self.ex, self.ey, self.ez]
     }
 
+    /// 从另一个局部坐标系复制所有数据到当前坐标系
+    ///
+    /// # Parameters
+    /// - `stm`: 源局部坐标系
     pub fn copy(&mut self, stm: &Stm) {
         self.ex = stm.ex;
         self.ey = stm.ey;
@@ -114,13 +139,13 @@ pub struct Atom {
 }
 
 impl Atom {
-    pub fn vec(&self) -> Vec3 {
-        let [x, y, z] = self.xyz;
-        Vec3::new(x, y, z)
-    }
-}
-
-impl Atom {
+    /// 创建一个新的原子
+    ///
+    /// # Parameters
+    /// - `nuc`: 原子核电荷数
+    /// - `xyz`: 原子坐标 [x, y, z]
+    /// - `idx`: 原子在分子中的索引
+    /// - `crg`: 有效核电荷数（赝势基组需要）
     pub fn new(nuc: usize, xyz: [f64; 3], idx: usize, crg: f64) -> Self {
         let mut rad = 0.0;
         let mut sym = None;
@@ -142,6 +167,13 @@ impl Atom {
         }
     }
 
+    /// 将原子坐标转换为 Vec3 向量
+    pub fn vec(&self) -> Vec3 {
+        let [x, y, z] = self.xyz;
+        Vec3::new(x, y, z)
+    }
+
+    /// 返回该原子在元素周期表中的行号
     pub fn irow(&self) -> usize {
         elems::atm2row(self.nuc)
     }
@@ -151,8 +183,8 @@ impl Atom {
 pub struct Atoms {
     pub atoms: Vec<Atom>,
     pub dists: Array2<f64>,                  // 距离矩阵
-    pub bonds: Array2<usize>,                // 键矩阵，两个原子之间是否成键 0 表示不成键，1 表示成键
     pub neles: [usize; 2],                   // α电子数和β电子数
+    pub bonds: Mutex<Vec<[usize; 2]>>,       // 键列表
     nebs: Mutex<HashMap<usize, Vec<usize>>>, // 每个原子的相邻原子
     angs: Mutex<HashMap<[usize; 3], f64>>,   // 键角
     vecs: Mutex<HashMap<[usize; 2], Vec3>>,
@@ -166,6 +198,14 @@ pub struct Atoms {
 }
 
 impl Atoms {
+    /// 从原子序数列表、坐标列表和有效核电荷数列表创建 Atoms 结构
+    ///
+    /// 自动计算距离矩阵、键矩阵以及α/β电子数
+    ///
+    /// # Parameters
+    /// - `atms`: 原子序数列表
+    /// - `xyzs`: 原子坐标列表
+    /// - `crgs`: 有效核电荷数列表
     pub fn new(atms: &Vec<usize>, xyzs: &Vec<[f64; 3]>, crgs: &Vec<f64>) -> Self {
         let natm = atms.len();
         let mut atoms = Vec::with_capacity(natm);
@@ -183,23 +223,22 @@ impl Atoms {
         let nelb = nele / 2;
         let neles = [nela, nelb];
         let mut dists = Array2::zeros((natm, natm));
-        let mut bonds = Array2::zeros((natm, natm));
+        let mut bonds = vec![];
         for i in 0..natm - 1 {
             for j in i + 1..natm {
                 let dist = maths::calc_dist(&xyzs[i], &xyzs[j]);
                 dists[(i, j)] = dist;
                 dists[(j, i)] = dist;
                 if dist < (atoms[i].rad + atoms[j].rad) * 1.1 {
-                    bonds[(i, j)] = 1;
-                    bonds[(j, i)] = 1;
+                    bonds.push([i, j]);
                 }
             }
         }
         Atoms {
             atoms: atoms,
             dists: dists,
-            bonds: bonds,
             neles: neles,
+            bonds: Mutex::new(bonds),
             nebs: Mutex::new(HashMap::new()),
             angs: Mutex::new(HashMap::new()),
             vecs: Mutex::new(HashMap::new()),
@@ -213,11 +252,21 @@ impl Atoms {
         }
     }
 
+    /// 添加一个原子到分子中
+    ///
+    /// # Parameters
+    /// - `atm`: 原子序数
+    /// - `xyz`: 原子坐标 [x, y, z]
+    /// - `crg`: 有效核电荷数
     pub fn add(&mut self, atm: usize, xyz: [f64; 3], crg: f64) {
         let idx = self.atoms.len() as usize;
         self.atoms.push(Atom::new(atm, xyz, idx, crg));
     }
 
+    /// 获取指定索引的原子，如果索引越界则 panic
+    ///
+    /// # Parameters
+    /// - `idx`: 原子索引
     pub fn get(&self, idx: usize) -> &Atom {
         &self.atoms.get(idx as usize).unwrap_or_else(|| {
             log::error!("原子索引超出范围:{}/{}", idx, self.atoms.len());
@@ -225,6 +274,7 @@ impl Atoms {
         })
     }
 
+    /// 返回原子总数
     pub fn len(&self) -> usize {
         return self.atoms.len();
     }
@@ -236,6 +286,9 @@ impl Atoms {
         ((xi - xj).powi(2) + (yi - yj).powi(2) + (zi - zj).powi(2)).sqrt()
     }
 
+    /// 返回距离矩阵
+    ///
+    /// 矩阵元素 (i, j) 表示原子 i 和原子 j 之间的距离
     pub fn dmat(&self) -> Array2<f64> {
         let natm = self.len();
         let mut dmat = Array2::zeros((natm, natm));
@@ -248,11 +301,13 @@ impl Atoms {
         dmat
     }
 
+    /// 返回所有原子的坐标列表（惰性初始化）
     pub fn xyzs(&self) -> &Vec<[f64; 3]> {
         self.xyzs
             .get_or_init(|| self.atoms.iter().map(|atom| atom.xyz).collect())
     }
 
+    /// 返回所有原子的坐标列表，单位转换为埃（Å）
     pub fn xyzs_ang(&self) -> Vec<[f64; 3]> {
         self.atoms
             .iter()
@@ -263,6 +318,7 @@ impl Atoms {
             .collect()
     }
 
+    /// 返回所有原子的半径列表
     pub fn rads(&self) -> Vec<f64> {
         let mut rads = Vec::new();
         for atom in self.atoms.iter() {
@@ -271,6 +327,7 @@ impl Atoms {
         rads
     }
 
+    /// 返回所有原子的元素符号列表
     pub fn syms(&self) -> Vec<String> {
         let mut syms = Vec::new();
         for atom in self.atoms.iter() {
@@ -287,7 +344,7 @@ impl Atoms {
         nucs
     }
 
-    // 每个原子的有效核电荷数
+    /// 每个原子的有效核电荷数
     pub fn crgs(&self) -> &Vec<f64> {
         let crgs = self
             .crgs
@@ -295,6 +352,7 @@ impl Atoms {
         crgs
     }
 
+    /// 返回所有原子的局部坐标系列表（惰性初始化）
     pub fn stms(&self) -> &Vec<Option<Stm>> {
         self.stms
             .get_or_init(|| self.atoms.iter().map(|atom| atom.stm.clone()).collect())
@@ -308,7 +366,10 @@ impl Atoms {
         idxs
     }
 
-    // 获取指定原子的邻接原子
+    /// 获取指定原子的邻接原子列表
+    ///
+    /// # Parameters
+    /// - `atm`: 原子索引
     pub fn nebs(&self, atm: usize) -> Vec<usize> {
         let mut nebs = self.nebs.lock().expect("锁定失败");
         let nebs = nebs
@@ -343,7 +404,14 @@ impl Atoms {
             .clone()
     }
 
-    // ai-aj-ak 三个原子之间的键角
+    /// 计算三个原子之间的键角
+    ///
+    /// 计算 ai-aj-ak 三个原子之间的键角，以 aj 为顶点
+    ///
+    /// # Parameters
+    /// - `ai`: 第一个原子索引
+    /// - `aj`: 第二个原子索引（顶点）
+    /// - `ak`: 第三个原子索引
     pub fn ang(&self, ai: usize, aj: usize, ak: usize) -> f64 {
         let mut angles = self.angs.lock().expect("锁定失败");
         *angles.entry([ai, aj, ak]).or_insert_with(|| {
@@ -354,16 +422,15 @@ impl Atoms {
         })
     }
 
-    // 该原子是否为线性的
+    /// 判断指定原子是否为线性结构
+    ///
+    /// # Parameters
+    /// - `atm`: 原子索引
     pub fn is_line(&self, atm: usize) -> bool {
         let mut is_lines = self.is_lines.lock().expect("锁定失败");
         *is_lines.entry(atm).or_insert_with(|| {
             let nebs = self.nebs(atm);
             if nebs.len() == 1 {
-                // // 单独的O原子直接算线性
-                // if self.syms()[atm] == "O" {
-                //     return true;
-                // }
                 let neb = nebs[0];
                 if self.nebs(neb).len() == 1 {
                     return true;
@@ -391,20 +458,33 @@ impl Atoms {
 
     /// 判断两个原子之间是否成键
     pub fn is_bond(&self, ai: usize, aj: usize) -> bool {
-        self.bonds[(ai, aj)] == 1
+        let [ai, aj] = if ai < aj { [ai, aj] } else { [aj, ai] };
+        let bonds = self.bonds.lock().expect("锁定失败");
+        bonds.iter().any(|bond| bond[0] == ai && bond[1] == aj)
     }
 
-    pub fn set_bonds(&self, bonds: HashMap<[usize; 2], bool>) {
+    /// 手动设置原子间的成键关系
+    ///
+    /// 设置后会清除所有缓存的邻接原子和线性判断结果
+    ///
+    /// # Parameters
+    /// - `bonds`: 成键关系映射，键为 [原子i, 原子j]，值为是否成键
+    pub fn set_bonds(&self, bonds: Vec<[usize; 2]>) {
         println!("设置成键:{:?}", bonds);
+        let mut bonds_store = self.bonds.lock().expect("锁定失败");
+        *bonds_store = bonds;
         let mut is_bonds = self.is_bonds.lock().expect("锁定失败");
-        *is_bonds = bonds;
+        is_bonds.clear();
         let mut is_lines = self.is_lines.lock().expect("锁定失败");
         is_lines.clear();
         let mut nebs = self.nebs.lock().expect("锁定失败");
         nebs.clear();
     }
 
-    // 获取指定原子的中心坐标
+    /// 获取指定原子列表的中心坐标
+    ///
+    /// # Parameters
+    /// - `atms`: 原子索引列表
     pub fn cent(&self, atms: &Vec<usize>) -> Vec3 {
         let count = atms.len();
         let mut cent = [0.0, 0.0, 0.0];
@@ -420,7 +500,12 @@ impl Atoms {
         Vec3::from_arr(cent)
     }
 
-    // 判断两个结构是否相等
+    /// 判断两个原子结构是否相等
+    ///
+    /// 比较原子符号和坐标，坐标误差小于 1e-2 视为相等
+    ///
+    /// # Parameters
+    /// - `other`: 另一个 Atoms 结构
     pub fn equal(&self, other: &Atoms) -> bool {
         let atoms_0 = &self.atoms;
         let atoms_1 = &other.atoms;
@@ -449,11 +534,12 @@ impl Atoms {
 
 impl Clone for Atoms {
     fn clone(&self) -> Self {
+        let bonds = self.bonds.lock().unwrap().clone();
         Atoms {
             atoms: self.atoms.clone(),
             dists: self.dists.clone(),
-            bonds: self.bonds.clone(),
             neles: self.neles.clone(),
+            bonds: Mutex::new(bonds),
             angs: Mutex::new(HashMap::new()),
             nebs: Mutex::new(HashMap::new()),
             vecs: Mutex::new(HashMap::new()),

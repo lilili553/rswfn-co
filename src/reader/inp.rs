@@ -7,12 +7,14 @@ use crate::datas::elems::sym2atm;
 use crate::reader::{Reader, read_lines};
 use std::collections::HashMap;
 
+/// Orca输入文件(.inp)读取器
 pub struct InpReader {
     pub marks: HashMap<String, usize>,
     pub lines: Vec<String>,
 }
 
 impl InpReader {
+    /// 创建InpReader实例
     pub fn new(path: &str) -> InpReader {
         let mut marks = HashMap::new();
         let lines = read_lines(path);
@@ -24,6 +26,7 @@ impl InpReader {
         InpReader { marks, lines }
     }
 
+    /// 读取几何结构
     pub fn read_geome(&self) -> (Vec<String>, Vec<[f64; 3]>) {
         let mark = self.marks.get("geome").expect("获取结构行失败");
         let reg1 = Regex::new(r"([a-z]+) +(-?\d+.\d+) +(-?\d+.\d+) +(-?\d+.\d+)").expect("正则表达式构建失败");
@@ -63,5 +66,5 @@ impl Reader for InpReader {
     }
 }
 
-// 元素符号小写到大写
+/// 元素符号从小写到大写的转换(预留)
 pub fn sym_s2b() {}

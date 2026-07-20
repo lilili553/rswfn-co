@@ -9,6 +9,7 @@ use crate::maths;
 use crate::moleprop;
 use ndarray::Array2;
 
+/// 电子密度计算器，支持分子、原子、轨道等不同级别的电子密度计算
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
     pub atms: &'m Vec<usize>,
@@ -18,6 +19,7 @@ pub struct Calculator<'m> {
 }
 
 impl<'m> Calculator<'m> {
+    /// 创建一个新的 Calculator 实例
     pub fn new(mole: &'m Mole) -> Self {
         let atms = mole.atoms().idxs();
         let mut wfn_caler = wfnfunc::Calculator::new(mole);
@@ -31,22 +33,24 @@ impl<'m> Calculator<'m> {
         }
     }
 
+    /// 获取仅包含 π 电子成分的分子对象（懒加载）
     pub fn mole_pi(&self) -> &Mole {
-        let mole_pocv = self
-            .mole_pi
-            .get_or_init(|| moleprop::newmole::Calculator::new(self.mole).mole_pi());
-        return mole_pocv;
+        self.mole_pi.get_or_init(|| {
+            moleprop::variants::Calculator::new(self.mole)
+                .mole_pi_pocv()
+                .expect("π轨道投影失败")
+        })
     }
 
+    /// 获取自旋分离后的 α 和 β 分子对象（懒加载）
     pub fn mole_spin(&self) -> &(Mole, Mole) {
-        let mole_spin = self
-            .mole_spin
-            .get_or_init(|| moleprop::newmole::Calculator::new(self.mole).mole_spin());
-        mole_spin
+        self.mole_spin
+            .get_or_init(|| moleprop::variants::Calculator::new(self.mole).mole_spin())
     }
 
     // 计算一个点处的电子密度，这些只计算一个点的函数不需要使用numpy数组传参，但是如果有格点的话就需要了
     #[rustfmt::skip]
+    /// 根据分子轨道系数矩阵计算一点处的电子密度及其梯度、Hessian
     pub fn mol_rho_cm(&self,grid: &[f64; 3],level: usize) -> GridVals {
         let mut mol_rho0 = 0.0;
         let mut mol_rho1 = [0.0;3];
@@ -55,23 +59,23 @@ impl<'m> Calculator<'m> {
         for (obt,occ) in occs.iter().enumerate() {
             let occ = *occ as f64;
             if occ == 0.0 {continue;}
-            let (obt_wfn0,obt_wfn1,obt_wfn2)=self.wfn_caler.obt_wfn(obt as usize,grid, level);
+            let wfns=self.wfn_caler.obt_wfn(obt as usize,grid, level);
 
-            mol_rho0 += obt_wfn0.powf(2.0)*occ;
+            mol_rho0 += wfns.val0.powf(2.0)*occ;
 
             if level >= 1 {
-                mol_rho1[0] += 2.0 * obt_wfn0 * obt_wfn1[0]*occ;
-                mol_rho1[1] += 2.0 * obt_wfn0 * obt_wfn1[1]*occ;
-                mol_rho1[2] += 2.0 * obt_wfn0 * obt_wfn1[2]*occ;
+                mol_rho1[0] += 2.0 * wfns.val0 * wfns.val1[0]*occ;
+                mol_rho1[1] += 2.0 * wfns.val0 * wfns.val1[1]*occ;
+                mol_rho1[2] += 2.0 * wfns.val0 * wfns.val1[2]*occ;
             }
             if level >= 2 {
-                mol_rho2[0][0] += 2.0 * (obt_wfn1[0].powi(2) + obt_wfn0 * obt_wfn2[0][0])*occ;
-                mol_rho2[1][1] += 2.0 * (obt_wfn1[1].powi(2) + obt_wfn0 * obt_wfn2[1][1])*occ;
-                mol_rho2[2][2] += 2.0 * (obt_wfn1[2].powi(2) + obt_wfn0 * obt_wfn2[2][2])*occ;
+                mol_rho2[0][0] += 2.0 * (wfns.val1[0].powi(2) + wfns.val0 * wfns.val2[0][0])*occ;
+                mol_rho2[1][1] += 2.0 * (wfns.val1[1].powi(2) + wfns.val0 * wfns.val2[1][1])*occ;
+                mol_rho2[2][2] += 2.0 * (wfns.val1[2].powi(2) + wfns.val0 * wfns.val2[2][2])*occ;
 
-                mol_rho2[0][1] += 2.0 * (obt_wfn1[0] * obt_wfn1[1] + obt_wfn0 * obt_wfn2[0][1])*occ;
-                mol_rho2[0][2] += 2.0 * (obt_wfn1[0] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[0][2])*occ;
-                mol_rho2[1][2] += 2.0 * (obt_wfn1[1] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[1][2])*occ;
+                mol_rho2[0][1] += 2.0 * (wfns.val1[0] * wfns.val1[1] + wfns.val0 * wfns.val2[0][1])*occ;
+                mol_rho2[0][2] += 2.0 * (wfns.val1[0] * wfns.val1[2] + wfns.val0 * wfns.val2[0][2])*occ;
+                mol_rho2[1][2] += 2.0 * (wfns.val1[1] * wfns.val1[2] + wfns.val0 * wfns.val2[1][2])*occ;
 
             }
         }
@@ -85,14 +89,15 @@ impl<'m> Calculator<'m> {
 
     // 计算某一点处的电子密度，根据密度矩阵计算分子电子密度
     #[rustfmt::skip]
+    /// 根据密度矩阵计算一点处的电子密度及其梯度、Hessian
     pub fn mol_rho_dm(&self, grid: &[f64; 3], level: usize) -> GridVals {
         let ato_atms=self.mole.basis().atos().atms("car");
         let dmat_car=self.mole.coefs().get_dmat("car", self.mole.basis());
-        let (ato_wfn0, ato_wfn1, ato_wfn2) = self.wfn_caler.ato_wfn(&grid, level);
+        let ato_wfns = self.wfn_caler.ato_wfn(&grid, level);
         let mut mol_rho0 = 0.0;
         let mut mol_rho1 = [0.0; 3];
         let mut mol_rho2 = [[0.0; 3]; 3];
-        let nmat = ato_wfn0.len();
+        let nmat = ato_wfns.len();
 
         for i in 0..nmat {
             let atmi= ato_atms[i];
@@ -112,24 +117,24 @@ impl<'m> Calculator<'m> {
                     continue;
                 }
                 let k= if i==j {1.0} else {2.0};
-                mol_rho0 += ato_wfn0[i] * ato_wfn0[j] * d*k;
+                mol_rho0 += ato_wfns[i].val0 * ato_wfns[j].val0 * d*k;
 
                 // 一阶导数：dx
                 if level>=1{
-                    mol_rho1[0] += (ato_wfn0[i] * ato_wfn1[j][0] + ato_wfn0[j] * ato_wfn1[i][0]) * d*k;
-                    mol_rho1[1] += (ato_wfn0[i] * ato_wfn1[j][1] + ato_wfn0[j] * ato_wfn1[i][1]) * d*k;
-                    mol_rho1[2] += (ato_wfn0[i] * ato_wfn1[j][2] + ato_wfn0[j] * ato_wfn1[i][2]) * d*k;
+                    mol_rho1[0] += (ato_wfns[i].val0 * ato_wfns[j].val1[0] + ato_wfns[j].val0 * ato_wfns[i].val1[0]) * d*k;
+                    mol_rho1[1] += (ato_wfns[i].val0 * ato_wfns[j].val1[1] + ato_wfns[j].val0 * ato_wfns[i].val1[1]) * d*k;
+                    mol_rho1[2] += (ato_wfns[i].val0 * ato_wfns[j].val1[2] + ato_wfns[j].val0 * ato_wfns[i].val1[2]) * d*k;
                 }
 
 
                 // 二阶导数：dxx
                 if level>=2{
-                    mol_rho2[0][0] += (ato_wfn2[i][0][0] * ato_wfn0[j]+ 2.0 * ato_wfn1[i][0] * ato_wfn1[j][0]+ ato_wfn0[i] * ato_wfn2[j][0][0])* d*k;
-                    mol_rho2[1][1] += (ato_wfn2[i][1][1] * ato_wfn0[j]+ 2.0 * ato_wfn1[i][1] * ato_wfn1[j][1]+ ato_wfn0[i] * ato_wfn2[j][1][1])* d*k;
-                    mol_rho2[2][2] += (ato_wfn2[i][2][2] * ato_wfn0[j]+ 2.0 * ato_wfn1[i][2] * ato_wfn1[j][2]+ ato_wfn0[i] * ato_wfn2[j][2][2])* d*k;
-                    mol_rho2[0][1] += (ato_wfn2[i][0][1] * ato_wfn0[j]+ ato_wfn1[i][0] * ato_wfn1[j][1]+ ato_wfn1[i][1] * ato_wfn1[j][0]+ ato_wfn0[i] * ato_wfn2[j][0][1])* d*k;
-                    mol_rho2[0][2] += (ato_wfn2[i][0][2] * ato_wfn0[j]+ ato_wfn1[i][0] * ato_wfn1[j][2]+ ato_wfn1[i][2] * ato_wfn1[j][0]+ ato_wfn0[i] * ato_wfn2[j][0][2])* d*k;
-                    mol_rho2[1][2] += (ato_wfn2[i][1][2] * ato_wfn0[j]+ ato_wfn1[i][1] * ato_wfn1[j][2]+ ato_wfn1[i][2] * ato_wfn1[j][1]+ ato_wfn0[i] * ato_wfn2[j][1][2])* d*k;
+                    mol_rho2[0][0] += (ato_wfns[i].val2[0][0] * ato_wfns[j].val0 + 2.0 * ato_wfns[i].val1[0] * ato_wfns[j].val1[0]+ ato_wfns[i].val0 * ato_wfns[j].val2[0][0])* d*k;
+                    mol_rho2[1][1] += (ato_wfns[i].val2[1][1] * ato_wfns[j].val0 + 2.0 * ato_wfns[i].val1[1] * ato_wfns[j].val1[1]+ ato_wfns[i].val0 * ato_wfns[j].val2[1][1])* d*k;
+                    mol_rho2[2][2] += (ato_wfns[i].val2[2][2] * ato_wfns[j].val0 + 2.0 * ato_wfns[i].val1[2] * ato_wfns[j].val1[2]+ ato_wfns[i].val0 * ato_wfns[j].val2[2][2])* d*k;
+                    mol_rho2[0][1] += (ato_wfns[i].val2[0][1] * ato_wfns[j].val0+ ato_wfns[i].val1[0] * ato_wfns[j].val1[1]+ ato_wfns[i].val1[1] * ato_wfns[j].val1[0]+ ato_wfns[i].val0 * ato_wfns[j].val2[0][1])* d*k;
+                    mol_rho2[0][2] += (ato_wfns[i].val2[0][2] * ato_wfns[j].val0+ ato_wfns[i].val1[0] * ato_wfns[j].val1[2]+ ato_wfns[i].val1[2] * ato_wfns[j].val1[0]+ ato_wfns[i].val0 * ato_wfns[j].val2[0][2])* d*k;
+                    mol_rho2[1][2] += (ato_wfns[i].val2[1][2] * ato_wfns[j].val0+ ato_wfns[i].val1[1] * ato_wfns[j].val1[2]+ ato_wfns[i].val1[2] * ato_wfns[j].val1[1]+ ato_wfns[i].val0 * ato_wfns[j].val2[1][2])* d*k;
                 }
             }
         }
@@ -142,6 +147,7 @@ impl<'m> Calculator<'m> {
     }
 
     // 计算自旋电子密度
+    /// 计算自旋电子密度（α 和 β 两个分量）
     pub fn mol_rho_spin(&self, grid: &[f64; 3], level: usize) -> [GridVals; 2] {
         let (mole_a, mole_b) = self.mole_spin();
         let mut cal_a = Calculator::new(mole_a);
@@ -154,30 +160,32 @@ impl<'m> Calculator<'m> {
     }
 
     // 计算所有原子轨道的电子密度
+    /// 计算所有原子轨道的电子密度
     pub fn ato_rho(&self, grid: &[f64; 3], level: usize) -> Vec<GridVals> {
         let pmat_car = self.mole.coefs().get_dmat("car", self.mole.basis());
         let nato = pmat_car.shape()[0];
-        let (ato_wfn0, ato_wfn1, ato_wfn2) = self.wfn_caler.ato_wfn(grid, level);
+        let ato_wfns = self.wfn_caler.ato_wfn(grid, level);
         let mut ato_rhos = vec![GridVals::non(); nato];
         for i in 0..nato {
             for j in 0..nato {
                 if pmat_car[(i, j)] == 0.0 {
                     continue;
                 };
-                ato_rhos[i].val0 += ato_wfn0[i] * ato_wfn0[j] * pmat_car[(i, j)];
+                ato_rhos[i].val0 += ato_wfns[i].val0 * ato_wfns[j].val0 * pmat_car[(i, j)];
                 if level >= 1 {
                     for k in 0..3 {
-                        ato_rhos[i].val1[k] +=
-                            (ato_wfn0[i] * ato_wfn1[j][k] + ato_wfn0[j] * ato_wfn1[i][k]) * pmat_car[(i, j)];
+                        ato_rhos[i].val1[k] += (ato_wfns[i].val0 * ato_wfns[j].val1[k]
+                            + ato_wfns[j].val0 * ato_wfns[i].val1[k])
+                            * pmat_car[(i, j)];
                     }
                 }
                 if level >= 2 {
                     for k in 0..3 {
                         for l in 0..3 {
-                            ato_rhos[i].val2[k][l] += (ato_wfn2[i][k][l] * ato_wfn0[j]
-                                + ato_wfn1[i][k] * ato_wfn1[j][l]
-                                + ato_wfn1[i][l] * ato_wfn1[j][k]
-                                + ato_wfn0[i] * ato_wfn2[j][k][l])
+                            ato_rhos[i].val2[k][l] += (ato_wfns[i].val2[k][l] * ato_wfns[j].val0
+                                + ato_wfns[i].val1[k] * ato_wfns[j].val1[l]
+                                + ato_wfns[i].val1[l] * ato_wfns[j].val1[k]
+                                + ato_wfns[i].val0 * ato_wfns[j].val2[k][l])
                                 * pmat_car[(i, j)];
                         }
                     }
@@ -188,6 +196,7 @@ impl<'m> Calculator<'m> {
     }
 
     // 计算预电子密度
+    /// 计算预电子密度（孤立原子密度叠加）
     pub fn pro_rho(&self, grid: &[f64; 3]) -> f64 {
         let natm = self.mole.atoms().len();
         let mut pro_rho = 0.0;
@@ -200,7 +209,8 @@ impl<'m> Calculator<'m> {
         pro_rho
     }
 
-    // 计算轨道电子密度
+    #[rustfmt::skip]
+    /// 计算指定分子轨道的电子密度
     pub fn obt_rho(&self, grid: &[f64; 3], obt: usize, level: usize) -> GridVals {
         let mut obt_rho0 = 0.0;
         let mut obt_rho1 = [0.0; 3];
@@ -208,21 +218,21 @@ impl<'m> Calculator<'m> {
         let occ = self.mole.coefs().obt_occs[obt as usize];
         // 循环所有的分子轨道
         // 先构建该分子轨道的波函数
-        let (obt_wfn0, obt_wfn1, obt_wfn2) = self.wfn_caler.obt_wfn(obt, grid, level);
-        obt_rho0 += obt_wfn0.powf(2.0) * (occ as f64);
+        let obt_wfns = self.wfn_caler.obt_wfn(obt, grid, level);
+        obt_rho0 += obt_wfns.val0.powf(2.0) * (occ as f64);
 
         if level >= 1 {
-            obt_rho1[0] = 2.0 * obt_wfn0 * obt_wfn1[0] * (occ as f64);
-            obt_rho1[1] = 2.0 * obt_wfn0 * obt_wfn1[1] * (occ as f64);
-            obt_rho1[2] = 2.0 * obt_wfn0 * obt_wfn1[2] * (occ as f64);
+            obt_rho1[0] = 2.0 * obt_wfns.val0 * obt_wfns.val1[0] * (occ as f64);
+            obt_rho1[1] = 2.0 * obt_wfns.val0 * obt_wfns.val1[1] * (occ as f64);
+            obt_rho1[2] = 2.0 * obt_wfns.val0 * obt_wfns.val1[2] * (occ as f64);
         }
         if level >= 2 {
-            obt_rho2[0][0] = 2.0 * (obt_wfn1[0] * obt_wfn1[0] + obt_wfn0 * obt_wfn2[0][0]) * (occ as f64);
-            obt_rho2[1][1] = 2.0 * (obt_wfn1[1] * obt_wfn1[1] + obt_wfn0 * obt_wfn2[1][1]) * (occ as f64);
-            obt_rho2[2][2] = 2.0 * (obt_wfn1[2] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[2][2]) * (occ as f64);
-            obt_rho2[0][1] = 2.0 * (obt_wfn1[0] * obt_wfn1[1] + obt_wfn0 * obt_wfn2[0][1]) * (occ as f64);
-            obt_rho2[0][2] = 2.0 * (obt_wfn1[0] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[0][2]) * (occ as f64);
-            obt_rho2[1][2] = 2.0 * (obt_wfn1[1] * obt_wfn1[2] + obt_wfn0 * obt_wfn2[1][2]) * (occ as f64);
+            obt_rho2[0][0] = 2.0 * (obt_wfns.val1[0] * obt_wfns.val1[0] + obt_wfns.val0 * obt_wfns.val2[0][0]) * (occ as f64);
+            obt_rho2[1][1] = 2.0 * (obt_wfns.val1[1] * obt_wfns.val1[1] + obt_wfns.val0 * obt_wfns.val2[1][1]) * (occ as f64);
+            obt_rho2[2][2] = 2.0 * (obt_wfns.val1[2] * obt_wfns.val1[2] + obt_wfns.val0 * obt_wfns.val2[2][2]) * (occ as f64);
+            obt_rho2[0][1] = 2.0 * (obt_wfns.val1[0] * obt_wfns.val1[1] + obt_wfns.val0 * obt_wfns.val2[0][1]) * (occ as f64);
+            obt_rho2[0][2] = 2.0 * (obt_wfns.val1[0] * obt_wfns.val1[2] + obt_wfns.val0 * obt_wfns.val2[0][2]) * (occ as f64);
+            obt_rho2[1][2] = 2.0 * (obt_wfns.val1[1] * obt_wfns.val1[2] + obt_wfns.val0 * obt_wfns.val2[1][2]) * (occ as f64);
             obt_rho2[1][0] = obt_rho2[0][1];
             obt_rho2[2][0] = obt_rho2[0][2];
             obt_rho2[2][1] = obt_rho2[1][2];
@@ -231,6 +241,7 @@ impl<'m> Calculator<'m> {
     }
 
     // Reduced Density Gradient
+    /// 计算约化密度梯度（Reduced Density Gradient）
     pub fn RDG(&self, grid: &[f64; 3]) -> f64 {
         let RDG_maxrho = 0.05;
         let grid_vals = self.mol_rho_dm(grid, 1);
@@ -246,6 +257,7 @@ impl<'m> Calculator<'m> {
         }
     }
 
+    /// 计算 IRI（Interaction Region Indicator）
     pub fn IRI(&self, grid: &[f64; 3], alp: Option<f64>) -> f64 {
         let grid_vals = self.mol_rho_dm(grid, 1);
         let alp = alp.unwrap_or(1.1);
@@ -255,6 +267,7 @@ impl<'m> Calculator<'m> {
         norm / rho.powf(alp)
     }
 
+    /// 计算电子密度的拉普拉斯量（∇²ρ）
     pub fn laplace(&self, grid: &[f64; 3]) -> f64 {
         let grid_vals = self.mol_rho_dm(grid, 2);
         let mut val = 0.0;
@@ -265,6 +278,7 @@ impl<'m> Calculator<'m> {
         val
     }
 
+    /// 计算 sign(λ₂)ρ，用于 NCI 分析
     pub fn signl2rho(&self, grid: &[f64; 3]) -> f64 {
         let grid_vals = self.mol_rho_dm(grid, 2);
         let hessian =
@@ -281,6 +295,7 @@ impl<'m> Calculator<'m> {
         singl2 * grid_vals.val0
     }
 
+    /// 计算 π 电子密度
     pub fn pi_rho(&self, grid: &[f64; 3], level: usize) -> GridVals {
         let mole_pocv = self.mole_pi();
         let rho_caler = Calculator::new(mole_pocv);
@@ -288,11 +303,13 @@ impl<'m> Calculator<'m> {
     }
 
     // 变形电子密度
+    /// 计算变形电子密度（Δρ = ρ_promolecular - ρ_molecular）
     pub fn del_rho(&self, grid: &[f64; 3]) -> f64 {
         self.pro_rho(grid) - self.mol_rho_dm(grid, 0).val0
     }
 
     // 福井函数
+    /// 计算福井函数（Fukui function）：f⁻, f⁺, f⁰, Δf
     pub fn fukui(&self, grid: &[f64; 3], moleN: &Mole, moleP: &Mole) -> [f64; 4] {
         let calerN = Calculator::new(moleN); // N+1个电子的分子
         let calerP = Calculator::new(moleP); // N-1个电子的分子
@@ -314,7 +331,7 @@ impl<'m> Calculator<'m> {
             if *occ == 0.0 {
                 continue;
             }
-            let [dx, dy, dz] = self.wfn_caler.obt_wfn(obt as usize, grid, 1).1;
+            let [dx, dy, dz] = self.wfn_caler.obt_wfn(obt as usize, grid, 1).val1;
             let occ = *occ as f64;
             let gx = occ * dx.powi(2);
             let gy = occ * dy.powi(2);
@@ -339,10 +356,10 @@ impl<'m> Calculator<'m> {
                 continue;
             }
             let occ = *occ as f64;
-            let (wfn0, _, wfn2) = self.wfn_caler.obt_wfn(obt as usize, grid, 2);
-            let kx = occ * wfn0 * wfn2[0][0];
-            let ky = occ * wfn0 * wfn2[1][1];
-            let kz = occ * wfn0 * wfn2[2][2];
+            let obt_wfns = self.wfn_caler.obt_wfn(obt as usize, grid, 2);
+            let kx = occ * obt_wfns.val0 * obt_wfns.val2[0][0];
+            let ky = occ * obt_wfns.val0 * obt_wfns.val2[1][1];
+            let kz = occ * obt_wfns.val0 * obt_wfns.val2[2][2];
             val += kx + ky + kz;
         }
         val * -0.5
@@ -354,8 +371,8 @@ impl<'m> Calculator<'m> {
         let mut val = 0.0;
         let occs = &self.mole.coefs().obt_occs;
         for obt in obts.iter() {
-            let (_wfn0, wfn1, _wfn2) = self.wfn_caler.obt_wfn(*obt, grid, 1);
-            let [gx, gy, gz] = wfn1;
+            let obt_wfns = self.wfn_caler.obt_wfn(*obt, grid, 1);
+            let [gx, gy, gz] = obt_wfns.val1;
             val += (gx.powi(2) + gy.powi(2) + gz.powi(2)) * occs[*obt];
         }
         val
@@ -401,6 +418,7 @@ impl<'m> Calculator<'m> {
         lol
     }
 
+    /// 计算信息熵密度（Information Entropy Density）
     pub fn infoentro(&self, grid: &[f64; 3]) -> f64 {
         let rho0 = self.mol_rho_dm(grid, 0).val0;
         let ncrg = self.mole.ncrg() as f64;
@@ -408,11 +426,13 @@ impl<'m> Calculator<'m> {
         if rho < 1e-100 { 0.0 } else { -rho * f64::ln(rho) }
     }
 
+    /// 计算活化密度（Activation Density）
     pub fn activate(&self, grid: &[f64; 3]) -> f64 {
         let rho = self.mol_rho_dm(grid, 0).val0;
         rho * f64::exp(-1.0 * (rho - 0.4))
     }
 
+    /// 计算电子密度的曲率（Curvature）
     pub fn curvature(&self, grid: &[f64; 3]) -> f64 {
         // 计算电子密度的曲率
         let rhos = self.mol_rho_dm(grid, 2);
@@ -431,6 +451,7 @@ impl<'m> Calculator<'m> {
     }
 }
 
+/// 根据密度矩阵计算电子密度（自由函数版本）
 pub fn mol_rho_dm(
     ato_atms: &Vec<usize>,
     dmat_car: &Array2<f64>,

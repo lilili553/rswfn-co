@@ -7,6 +7,7 @@ use crate::datas::consts::BOHR;
 use crate::datas::elems::sym2atm;
 use crate::reader::{Reader, read_lines};
 
+/// Xyz格式文件(.xyz)读取器
 pub struct XyzReader {
     pub path: String,
     pub geomes: OnceLock<Vec<Atoms>>,
@@ -14,9 +15,15 @@ pub struct XyzReader {
 }
 
 impl XyzReader {
+    /// 创建XyzReader实例
     pub fn new(path: &str) -> Self {
-        Self { path: path.to_string(), lines: read_lines(path), geomes: OnceLock::new() }
+        Self {
+            path: path.to_string(),
+            lines: read_lines(path),
+            geomes: OnceLock::new(),
+        }
     }
+    /// 读取所有几何结构(支持多个构象)
     pub fn read_geomes(&self) -> &Vec<Atoms> {
         let geomes = self.geomes.get_or_init(|| {
             let r2 = Regex::new(r"^ *([A-Za-z]+) +(-?\d+.\d+) +(-?\d+.\d+) +(-?\d+.\d+)$").expect("reg new error");

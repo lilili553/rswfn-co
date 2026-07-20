@@ -130,6 +130,7 @@ pub static HMAT: LazyLock<Array2<f64>> = LazyLock::new(|| {
     hmat
 });
 
+/// 根据角动量获取球谐到笛卡尔的变换矩阵
 pub fn sph2car_mat(ang: usize) -> Array2<f64> {
     match ang {
         0 => Array2::eye(1),
@@ -152,6 +153,7 @@ pub fn sph2car_mat(ang: usize) -> Array2<f64> {
 //     maths::inv(&tmat).dot(&tt)
 // }
 
+/// 根据角动量获取笛卡尔到球谐的变换矩阵
 pub fn car2sph_mat(ang: usize) -> Array2<f64> {
     let tmat = sph2car_mat(ang);
     tmat.t().to_owned()
@@ -175,19 +177,30 @@ pub const CAR_D_SYMS: [&str; 6] = [
 pub const CAR_D_LMNS: [[usize; 3]; 6] = [[2, 0, 0], [0, 2, 0], [0, 0, 2], [1, 1, 0], [1, 0, 1], [0, 1, 1]];
 
 pub const CAR_F_SYMS: [&str; 10] = [
-    "XXX", // [3,0,0]
-    "YYY", // [0,3,0]
-    "ZZZ", // [0,0,3]
-    "XYY", // [1,2,0]
-    "XXY", // [2,1,0]
-    "XXZ", // [2,0,1]
-    "XZZ", // [1,0,2]
-    "YZZ", // [0,1,2]
-    "YYZ", // [0,2,1]
-    "XYZ", // [1,1,1]
+    "XXX", // [3,0,0] 0
+    "YYY", // [0,3,0] 1
+    "ZZZ", // [0,0,3] 2
+    "XYY", // [1,2,0] 3
+    "XXY", // [2,1,0] 4
+    "XXZ", // [2,0,1] 5
+    "XZZ", // [1,0,2] 6
+    "YZZ", // [0,1,2] 7
+    "YYZ", // [0,2,1] 8
+    "XYZ", // [1,1,1] 9
 ];
 
-pub const CAR_F_LMNS: [[usize; 3]; 10] = [[3, 0, 0], [0, 3, 0], [0, 0, 3], [1, 2, 0], [2, 1, 0], [2, 0, 1], [1, 0, 2], [0, 1, 2], [0, 2, 1], [1, 1, 1]];
+pub const CAR_F_LMNS: [[usize; 3]; 10] = [
+    [3, 0, 0],
+    [0, 3, 0],
+    [0, 0, 3],
+    [1, 2, 0],
+    [2, 1, 0],
+    [2, 0, 1],
+    [1, 0, 2],
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 1, 1],
+];
 
 pub const CAR_G_SYMS: [&str; 15] = [
     "ZZZZ", // [0,0,4]
@@ -207,7 +220,23 @@ pub const CAR_G_SYMS: [&str; 15] = [
     "XXXX", // [4,0,0]
 ];
 
-pub const CAR_G_LMNS: [[usize; 3]; 15] = [[0, 0, 4], [0, 1, 3], [0, 2, 2], [0, 3, 1], [0, 4, 0], [1, 0, 3], [1, 1, 2], [1, 2, 1], [1, 3, 0], [2, 0, 2], [2, 1, 1], [2, 2, 0], [3, 0, 1], [3, 1, 0], [4, 0, 0]];
+pub const CAR_G_LMNS: [[usize; 3]; 15] = [
+    [0, 0, 4],
+    [0, 1, 3],
+    [0, 2, 2],
+    [0, 3, 1],
+    [0, 4, 0],
+    [1, 0, 3],
+    [1, 1, 2],
+    [1, 2, 1],
+    [1, 3, 0],
+    [2, 0, 2],
+    [2, 1, 1],
+    [2, 2, 0],
+    [3, 0, 1],
+    [3, 1, 0],
+    [4, 0, 0],
+];
 
 pub const CAR_H_SYMS: [&str; 21] = [
     "ZZZZZ", // [0,0,5]
@@ -233,7 +262,29 @@ pub const CAR_H_SYMS: [&str; 21] = [
     "XXXXX", // [5,0,0]
 ];
 
-pub const CAR_H_LMNS: [[usize; 3]; 21] = [[0, 0, 5], [0, 1, 4], [0, 2, 3], [0, 3, 2], [0, 4, 1], [0, 5, 0], [1, 0, 4], [1, 1, 3], [1, 2, 2], [1, 3, 1], [1, 4, 0], [2, 0, 3], [2, 1, 2], [2, 2, 1], [2, 3, 0], [3, 0, 2], [3, 1, 1], [3, 2, 0], [4, 0, 1], [4, 1, 0], [5, 0, 0]];
+pub const CAR_H_LMNS: [[usize; 3]; 21] = [
+    [0, 0, 5],
+    [0, 1, 4],
+    [0, 2, 3],
+    [0, 3, 2],
+    [0, 4, 1],
+    [0, 5, 0],
+    [1, 0, 4],
+    [1, 1, 3],
+    [1, 2, 2],
+    [1, 3, 1],
+    [1, 4, 0],
+    [2, 0, 3],
+    [2, 1, 2],
+    [2, 2, 1],
+    [2, 3, 0],
+    [3, 0, 2],
+    [3, 1, 1],
+    [3, 2, 0],
+    [4, 0, 1],
+    [4, 1, 0],
+    [5, 0, 0],
+];
 
 pub const SPH_D_SYMS: [&str; 5] = [
     "D 0", // z^2
@@ -257,9 +308,29 @@ pub const SPH_G_SYMS:[&str; 9]=["G 0","G+1","G-1","G+2","G-2","G+3","G-3","G+4",
 #[rustfmt::skip]
 pub const SPH_H_SYMS:[&str;11]=["H 0","H+1","H-1","H+2","H-2","H+3","H-3","H+4","H-4","H+5","H-5"];
 
-pub static LMNS: LazyLock<Vec<[usize; 3]>> = LazyLock::new(|| [&MIX_S_LMNS[..], &MIX_P_LMNS[..], &CAR_D_LMNS[..], &CAR_F_LMNS[..], &CAR_G_LMNS[..], &CAR_H_LMNS[..]].concat());
+pub static LMNS: LazyLock<Vec<[usize; 3]>> = LazyLock::new(|| {
+    [
+        &MIX_S_LMNS[..],
+        &MIX_P_LMNS[..],
+        &CAR_D_LMNS[..],
+        &CAR_F_LMNS[..],
+        &CAR_G_LMNS[..],
+        &CAR_H_LMNS[..],
+    ]
+    .concat()
+});
 
-pub static SYMS: LazyLock<Vec<&str>> = LazyLock::new(|| [&MIX_S_SYMS[..], &MIX_P_SYMS[..], &CAR_D_SYMS[..], &CAR_F_SYMS[..], &CAR_G_SYMS[..], &CAR_H_SYMS[..]].concat());
+pub static SYMS: LazyLock<Vec<&str>> = LazyLock::new(|| {
+    [
+        &MIX_S_SYMS[..],
+        &MIX_P_SYMS[..],
+        &CAR_D_SYMS[..],
+        &CAR_F_SYMS[..],
+        &CAR_G_SYMS[..],
+        &CAR_H_SYMS[..],
+    ]
+    .concat()
+});
 
 #[cached]
 pub fn get_mix_syms() -> Vec<&'static str> {
@@ -277,6 +348,8 @@ pub fn get_sph_syms() -> Vec<&'static str> {
 }
 
 #[rustfmt::skip]
+/// 根据角动量获取对应的轨道角动量分量（l, m, n）列表
+/// 仅支持0-3（s, p, d, f）
 pub fn ang2lmns(ang: usize) -> Vec<[usize; 3]> {
     match ang {
         0 => MIX_S_LMNS.clone().to_vec(),
@@ -286,6 +359,8 @@ pub fn ang2lmns(ang: usize) -> Vec<[usize; 3]> {
         _ => panic!("未知角动量"),
     }
 }
+/// 根据角动量和形式获取轨道符号列表
+/// - form: "car" 或 "sph"
 pub fn ang2syms(ang: usize, form: &str) -> Vec<&str> {
     match (form, ang) {
         ("car", 0) => MIX_S_SYMS.clone().to_vec(),
@@ -304,6 +379,7 @@ pub fn ang2syms(ang: usize, form: &str) -> Vec<&str> {
     }
 }
 
+/// 将角动量分量(l,m,n)转换为对应的轨道符号
 pub fn lmn2sym(lmn: &[usize; 3]) -> String {
     let syms = &SYMS;
     let lmns = &LMNS;
@@ -315,6 +391,7 @@ pub fn lmn2sym(lmn: &[usize; 3]) -> String {
     panic!("未知角动量分量");
 }
 
+/// 将轨道符号转换为对应的角动量分量(l,m,n)
 #[cached(key = "String", convert = r"{ sym.to_string() }")]
 pub fn sym2lmn(sym: &str) -> [usize; 3] {
     let syms = &SYMS;
@@ -327,7 +404,7 @@ pub fn sym2lmn(sym: &str) -> [usize; 3] {
     panic!("未知角动量分量");
 }
 
-// 根据长度获取符号
+/// 根据壳层长度获取轨道符号列表
 #[cached]
 pub fn len2syms(len: usize) -> Vec<String> {
     let syms = match len {
@@ -349,6 +426,7 @@ pub fn len2syms(len: usize) -> Vec<String> {
     syms.iter().map(|sym| sym.to_string()).collect()
 }
 
+/// 将轨道符号转换为对应的角动量量子数
 #[cached(key = "String", convert = r"{ sym.to_string() }")]
 pub fn sym2ang(sym: &str) -> usize {
     for s_sym in MIX_S_SYMS {
@@ -394,7 +472,7 @@ pub fn sym2ang(sym: &str) -> usize {
     panic!("未知符号:{}", sym);
 }
 
-/// 根据符号，获取壳层类型
+/// 根据符号获取壳层类型（0:混合类型, 1:球谐类型, 2:笛卡尔类型）
 pub fn sym2stp(sym: &str) -> usize {
     for mix_sym in get_mix_syms() {
         if sym == mix_sym {

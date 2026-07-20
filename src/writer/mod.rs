@@ -12,6 +12,10 @@ pub use gjf::GjfWriter;
 pub use obj::ObjWriter;
 pub use xyz::XyzWriter;
 
+/// 文件写入器trait
+///
+/// 定义将分子信息写入各种文件格式的统一接口。
 pub trait Writer {
+    /// 从分子结构读取数据
     fn read_mole(&mut self, mole: &crate::base::Mole);
 }

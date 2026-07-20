@@ -7,9 +7,14 @@ use std::{collections::HashMap, f64::consts::PI, vec};
 use ndarray::Array2;
 
 use crate::base::{Mole, Stm, Vec3};
+use crate::datas;
 use crate::gridprop;
 use crate::maths;
 
+/// 原子局部方向与法向量计算器。
+///
+/// 提供原子法向量、局部坐标系（LCS）以及反应方向生成等功能，
+/// 用于后续的 π 轨道分析和方向自由价计算。
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
     pub rand_vz: Vec3,
@@ -17,16 +22,41 @@ pub struct Calculator<'m> {
 }
 
 impl<'m> Calculator<'m> {
+    /// 创建一个新的方向计算器。
+    ///
+    /// 初始化随机辅助向量，若分子为线性则预计算所有原子的法向量。
+    ///
+    /// # Parameters
+    /// - `mole` — 分子引用
     pub fn new(mole: &'m Mole) -> Self {
         // let rand_vz = maths::rand_vect();
         let rand_vz = Vec3::rand();
+        let mut normals = HashMap::new();
+        if mole.is_line() {
+            let bond_vec = mole.atoms.vec(0, 1);
+            let rand_vec = Vec3::rand();
+            let norm_vec = bond_vec.cross(&rand_vec).normalize();
+            for i in 0..mole.atoms.len() {
+                normals.insert(i, Some(norm_vec.clone()));
+            }
+        }
         Calculator {
             mole: mole,
             rand_vz: rand_vz,
-            normals: Mutex::new(HashMap::new()),
+            normals: Mutex::new(normals),
         }
     }
 
+    /// 获取原子的法向量。
+    ///
+    /// 优先从缓存获取，若无法直接计算则通过 BFS 搜索相邻原子的法向量。
+    /// 对于只有一个相邻原子的情况，保证法向量垂直于键轴。
+    ///
+    /// # Parameters
+    /// - `atm` — 原子索引
+    ///
+    /// # Returns
+    /// 法向量，若无法确定则返回 `None`
     pub fn normal_vector(&self, atm: usize) -> Option<Vec3> {
         let atoms = self.mole.atoms();
         let nebs = atoms.nebs(atm);
@@ -83,6 +113,19 @@ impl<'m> Calculator<'m> {
         vz
     }
 
+    /// 计算原子的法向量（含缓存）。
+    ///
+    /// 根据相邻原子数采用不同策略:
+    /// - 1 个相邻原子: 无法确定，返回 `None`
+    /// - 2 个相邻原子: 通过两键向量的叉积得到法向量
+    /// - 3 个相邻原子: 通过三点确定的平面计算法向量
+    /// - 6 个相邻原子: 碳硼烷特例，取与其他键最小排斥方向
+    ///
+    /// # Parameters
+    /// - `atm` — 原子索引
+    ///
+    /// # Returns
+    /// 法向量，若无法确定则返回 `None`
     pub fn get_normal(&self, atm: usize) -> Option<Vec3> {
         let mut normals = self.normals.lock().expect("锁定失败");
         normals
@@ -164,12 +207,21 @@ impl<'m> Calculator<'m> {
                     }
                     let vect = atoms.vec(atm, min_idx);
                     return Some(vect.normalize());
+                } else {
+                    return Some(self.min_exclusion(atm));
                 }
                 return None;
             })
             .clone()
     }
 
+    /// 计算法向量修正矩阵。
+    ///
+    /// 对于高配位数（≥5）的相邻原子对，根据其法向量夹角的余弦值
+    /// 对键级矩阵进行修正。
+    ///
+    /// # Returns
+    /// `natm × natm` 的修正矩阵
     pub fn dmat_fix(&self) -> Array2<f64> {
         let mut dirs = vec![];
         let atoms = self.mole.atoms();
@@ -244,7 +296,7 @@ impl<'m> Calculator<'m> {
                         };
                         let v_join = v_norm.cross(&v_bond).normalize();
                         let v_norm = v_bond.cross(&v_join).normalize(); // 重新正交化
-                        [v_bond, v_join, v_norm]
+                        [v_norm, v_join, v_bond]
                     }
                     None => {
                         if nebs.len() == 1 {
@@ -293,20 +345,24 @@ impl<'m> Calculator<'m> {
                 Some(stm)
             }
         };
+        // let mut stm = self.RLCS(atm);
+        // stm.ey = [0.0, 1.0, 0.0];
+        // stm.ez = [-1.0, 0.0, 0.0];
+        // Some(stm)
         stm
     }
 
     /// 随机局部坐标系
     pub fn RLCS(&self, atm: usize) -> Stm {
-        let vz = match self.normal_vector(atm) {
+        let vx = match self.normal_vector(atm) {
             Some(normal) => normal,
             None => {
                 log::warn!("原子{}没有法向量", atm);
                 Vec3::rand()
             }
         };
-        let rand_vec = Vec3::rand();
-        let vx = vz.cross(&rand_vec).normalize();
+        let vy = Vec3::rand();
+        let vz = vx.cross(&vy).normalize();
         let vy = vz.cross(&vx).normalize();
         let ex = vx.into_arr();
         let ey = vy.into_arr();
@@ -326,6 +382,18 @@ impl<'m> Calculator<'m> {
         mlcs
     }
 
+    /// 生成原子周围的反应方向采样点。
+    ///
+    /// 根据相邻原子数量采用不同策略:
+    /// - 1 个相邻原子: 在键反向半球均匀采样
+    /// - 2 个相邻原子: 在键角平分面周围均匀采样
+    /// - 3 个相邻原子: 基于平面法向量和键方向生成
+    ///
+    /// # Parameters
+    /// - `atm` — 原子索引
+    ///
+    /// # Returns
+    /// 单位方向向量列表
     pub fn reactions(&self, atm: usize) -> Vec<Vec3> {
         let atoms = self.mole.atoms();
         let nebs = atoms.nebs(atm);
@@ -343,12 +411,12 @@ impl<'m> Calculator<'m> {
 
             for i in 0..4 {
                 let angle = i as f64 * PI / 8.0;
-                let pi = point.rotate_point(&axis_i, angle);
+                let diri = vert_vect.rotate_arrow(&axis_i, angle);
                 for j in 0..36 {
                     let angle = j as f64 * PI / 18.0;
-                    let pj = pi.rotate_point(&axis_j, angle);
-                    let vec = pj - &atom_cent;
-                    vectors.push(vec);
+                    let dirj = diri.rotate_arrow(&axis_j, angle);
+                    // let vec = pj - &atom_cent;
+                    vectors.push(dirj.normalize());
                 }
             }
             vectors.push(bond_vect.clone() * -1.0);
@@ -370,7 +438,7 @@ impl<'m> Calculator<'m> {
 
                 for i in 0..36 {
                     // let vector = maths::rotate_point(&vert_vec, &cent, &bond_vec, i as f64 * PI / 18.0);
-                    let vector = vert_vec.rotate_arrow(&cent, &bond_vec, i as f64 * PI / 18.0);
+                    let vector = vert_vec.rotate_arrow(&bond_vec, i as f64 * PI / 18.0);
                     vectors.push(vector.normalize());
                 }
             } else {
@@ -384,7 +452,7 @@ impl<'m> Calculator<'m> {
                 for i in 0..1 + count {
                     // 水平旋转
                     let rang = dang * i as f64; // 旋转角度，跳过90度
-                    let axis = vi.rotate_arrow(&cent, &vert_vec, -rang).normalize();
+                    let axis = vi.rotate_arrow(&vert_vec, -rang).normalize();
                     for j in 0..18 {
                         // 垂直旋转
                         // 垂直方向都是18个
@@ -392,7 +460,7 @@ impl<'m> Calculator<'m> {
                         if i != 0 && (j == 0 || j == 17) {
                             continue;
                         }
-                        let vector = vert_vec.rotate_arrow(&cent, &axis, j as f64 * PI / 18.0);
+                        let vector = vert_vec.rotate_arrow(&axis, j as f64 * PI / 18.0);
                         vectors.push(vector.normalize());
                     }
                 }
@@ -444,6 +512,15 @@ impl<'m> Calculator<'m> {
         return vectors;
     }
 
+    /// 通过格点排斥法获取原子周围的可达方向。
+    ///
+    /// 在格点中筛选出与所有相邻原子键向量夹角均大于 90° 的方向。
+    ///
+    /// # Parameters
+    /// - `atm` — 原子索引
+    ///
+    /// # Returns
+    /// 满足排斥条件的方向向量列表
     pub fn gt_bond_angle(&self, atm: usize) -> Vec<Vec3> {
         // let dir_caler=atomprop::direction::Calculator::new(self.mole);
         let gridCaler = gridprop::dftgrid::Calculator::new(self.mole);
@@ -472,6 +549,15 @@ impl<'m> Calculator<'m> {
         dirs
     }
 
+    /// 为线性分子（键角约 180°）生成反应方向。
+    ///
+    /// 若原子处于线性环境则委托 `reactions` 生成方向；否则返回空列表。
+    ///
+    /// # Parameters
+    /// - `atm` — 原子索引
+    ///
+    /// # Returns
+    /// 单位方向向量列表
     pub fn linear_circle(&self, atm: usize) -> Vec<Vec3> {
         let dirs: Vec<Vec3> = Vec::new();
         let atoms = self.mole.atoms();
@@ -490,5 +576,62 @@ impl<'m> Calculator<'m> {
         } else {
             return dirs;
         }
+    }
+
+    /// 获取与所有键轴最小排斥力的方向
+    pub fn min_exclusion(&self, atm: usize) -> Vec3 {
+        fn exclusion(dir: &Vec3, bond_dirs: &[Vec3]) -> f64 {
+            let angles: Vec<f64> = bond_dirs.iter().map(|bond_dir| dir.angle(bond_dir)).collect();
+            // 计算角度的RMSE
+            let rmse = angles.iter().fold(0.0, |acc, angle| acc + angle.powi(2)) / angles.len() as f64;
+            rmse
+        }
+        // 方向初猜
+        let init_dirs: Vec<Vec3> = datas::lebedev::ld0014()
+            .0
+            .iter()
+            .map(|dir| Vec3::from_arr(*dir))
+            .collect();
+        let bond_dirs: Vec<Vec3> = {
+            let atoms = self.mole.atoms();
+            let nebs = atoms.nebs(atm);
+            nebs.iter().map(|neb| atoms.vec(atm, *neb)).collect()
+        };
+        let mut idx = 0;
+        let mut score = 0.0;
+        for (i, dir) in init_dirs.iter().enumerate() {
+            let val = exclusion(dir, &bond_dirs);
+            if val > score {
+                score = val;
+                idx = i;
+            }
+        }
+        // 获取初猜方向
+        let mut init_dir = init_dirs[idx].clone();
+        let mut step = 0.01;
+        let z_axis = Vec3::new(0.0, 0.0, 1.0);
+        let x_axis = Vec3::new(1.0, 0.0, 0.0);
+
+        while step > 0.0001 {
+            let next_dirs = vec![
+                init_dir.clone().rotate_arrow(&z_axis, step),
+                init_dir.clone().rotate_arrow(&z_axis, -step),
+                init_dir.clone().rotate_arrow(&x_axis, step),
+                init_dir.clone().rotate_arrow(&x_axis, -step),
+            ];
+            let vals: Vec<f64> = next_dirs.iter().map(|dir| exclusion(dir, &bond_dirs)).collect();
+            let (max_idx, max_val) = maths::arg_max(&vals);
+            if max_val > score {
+                init_dir = next_dirs[max_idx].clone();
+            } else {
+                if step > 0.0001 {
+                    step /= 10.0;
+                } else {
+                    break;
+                }
+            }
+            score = max_val;
+        }
+        init_dir
     }
 }

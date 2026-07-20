@@ -1,3 +1,4 @@
+/// 计算元素矩阵，用于轨道分析中的元素贡献
 pub fn ele_mat(matc: &Vec<Vec<f64>>, mats: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     let nato = matc.len();
     let nobt = matc[0].len();

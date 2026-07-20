@@ -1,4 +1,4 @@
-// 输出dmi或者dmo文件
+/// Dmo/Dmi格式文件写入器
 use crate::datas::consts::BOHR;
 use crate::writer::Writer;
 use ndarray::Array2;
@@ -33,7 +33,15 @@ impl DmoWriter {
         for atm in 0..natm {
             let sym = &self.syms[atm];
             let [x, y, z] = self.xyzs[atm];
-            write!(&mut file, "{:>2}{:>14.8}{:>14.8}{:>14.8}\n", sym, x / BOHR, y / BOHR, z / BOHR).unwrap();
+            write!(
+                &mut file,
+                "{:>2}{:>14.8}{:>14.8}{:>14.8}\n",
+                sym,
+                x / BOHR,
+                y / BOHR,
+                z / BOHR
+            )
+            .unwrap();
         }
         let atos = &self.atos;
         let nato = atos.len();
@@ -45,7 +53,17 @@ impl DmoWriter {
                 let [dx, dy, dz] = ato.3;
                 let atm = ato.0;
                 let sym = &ato.2;
-                write!(&mut file, "{:>5}{:>3}{:>3}{:>14.8}{:>14.8}{:>14.8}\n", atm + 1, 2, sym, dx, dy, dz).unwrap();
+                write!(
+                    &mut file,
+                    "{:>5}{:>3}{:>3}{:>14.8}{:>14.8}{:>14.8}\n",
+                    atm + 1,
+                    2,
+                    sym,
+                    dx,
+                    dy,
+                    dz
+                )
+                .unwrap();
             }
         }
 
@@ -59,7 +77,16 @@ impl DmoWriter {
                     let aj = atos[j].0;
                     let bv = BM[(i, j)];
                     if bv != 0.0 {
-                        write!(&mut file, "{:>5}{:>5}{:>5}{:>5}{:>14.8}\n", ai + 1, aj + 1, i + 1, j + 1, bv).unwrap();
+                        write!(
+                            &mut file,
+                            "{:>5}{:>5}{:>5}{:>5}{:>14.8}\n",
+                            ai + 1,
+                            aj + 1,
+                            i + 1,
+                            j + 1,
+                            bv
+                        )
+                        .unwrap();
                     }
                 }
             }

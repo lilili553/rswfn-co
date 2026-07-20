@@ -10,6 +10,7 @@ use crate::datas;
 use crate::datas::mocv;
 use crate::maths;
 
+/// 分子轨道系数矩阵操作计算器，支持 POCV、MOCV 和轨道定域化等
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
     pub vobt: bool, // 是否包含空轨道
@@ -17,6 +18,7 @@ pub struct Calculator<'m> {
 }
 
 impl<'m> Calculator<'m> {
+    /// 创建一个新的 Calculator 实例
     pub fn new(mole: &'m Mole) -> Self {
         let atms = mole.atoms().idxs();
         Calculator {
@@ -25,15 +27,21 @@ impl<'m> Calculator<'m> {
             atms: atms,
         }
     }
-
+    /// 使用pocv法计算的投影分子轨道系数矩阵
+    ///
+    /// # Arguments
+    ///
+    /// * `dirs` - 每个原子对应的方向向量
+    /// * `keep_other_atm` - 其它原子轨道系数是否保留
+    /// * `keep_other_sym` - 是否保留其它类型的轨道
     pub fn pocv(
         &self,
-        dirs: &HashMap<usize, Vec3>, // 每个原子对应的方向向量
-        keep_other_atm: bool,        // 其它原子轨道系数是否保留
-        keep_other_sym: bool,        //是否保留其它类型的轨道
-    ) -> Array2<f64> {
+        dirs: &HashMap<usize, Vec3>,
+        keep_other_atm: bool,
+        keep_other_sym: bool,
+    ) -> Result<Array2<f64>, String> {
         let atoms = self.mole.atoms();
-        let uls = self.mole.coefs().atm_uplo("raw", self.mole.basis());
+        let uls = self.mole.basis().atm_uplo("raw");
         let mut atms: Vec<usize> = dirs.keys().cloned().collect();
         atms.sort_by(|x, y| x.cmp(y));
         let cmat_raw = self.mole.coefs().get_cmat("raw", self.mole.basis());
@@ -88,16 +96,17 @@ impl<'m> Calculator<'m> {
                 let px = &cmat_pocv[(ato + 0, *obt as usize)];
                 let py = &cmat_pocv[(ato + 1, *obt as usize)];
                 let pz = &cmat_pocv[(ato + 2, *obt as usize)];
-                let [tx, ty, tz] = maths::vec_project([*px, *py, *pz], [dx, dy, dz]);
+                let [tx, ty, tz] = maths::vec_project([*px, *py, *pz], [dx, dy, dz])?;
                 cmat_pocv[(ato + 0, *obt as usize)] = tx;
                 cmat_pocv[(ato + 1, *obt as usize)] = ty;
                 cmat_pocv[(ato + 2, *obt as usize)] = tz;
             }
         }
-        cmat_pocv
+        Ok(cmat_pocv)
     }
 
-    pub fn pi_pocv(&self) -> (HashMap<usize, Vec3>, Array2<f64>) {
+    /// 使用pocv方法计算得到pi分子轨道系数矩阵
+    pub fn pi_pocv(&self) -> Result<(HashMap<usize, Vec3>, Array2<f64>), String> {
         let dir_caler = atomprop::direction::Calculator::new(self.mole);
         let mut dirs = HashMap::new();
         let atoms = self.mole.atoms();
@@ -112,11 +121,16 @@ impl<'m> Calculator<'m> {
                 None => {}
             }
         }
-        let cmat = self.pocv(&dirs, false, false);
-        (dirs, cmat)
+        let cmat = self.pocv(&dirs, false, false)?;
+        Ok((dirs, cmat))
     }
 
     /// 轨道映射法，需要使用笛卡尔类型原子轨道
+    ///
+    /// # Arguments
+    ///
+    /// * `stms` - 原子局部坐标系
+    /// * `atos` - 原子轨道索引
     pub fn mocv(&self, stms: &HashMap<usize, Stm>, atos: &Vec<usize>) -> Array2<f64> {
         let ato_syms = self.mole.basis().atos().syms("raw");
         let ato_atms = self.mole.basis().atos().atms("raw");
@@ -160,7 +174,9 @@ impl<'m> Calculator<'m> {
         cmat_mocv
     }
 
-    pub fn pi_mocv(&self, dest: usize) -> (HashMap<usize, Stm>, Vec<usize>, Array2<f64>) {
+    /// 使用mocv方法计算得到pi分子轨道系数矩阵
+    /// 使用 MOCV 方法计算 π 分子轨道系数矩阵
+    pub fn pi_mocv(&self, dest: &MocvDest) -> (HashMap<usize, Stm>, Vec<usize>, Array2<f64>) {
         let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
         let mut stms = HashMap::new();
         let atoms = self.mole.atoms();
@@ -183,7 +199,8 @@ impl<'m> Calculator<'m> {
         (stms, ato_idxs, cmat)
     }
 
-    // 原子局部坐标系的分子轨道系数矩阵
+    /// 原子局部坐标系的分子轨道系数矩阵
+    /// 将分子轨道系数矩阵转换到原子局部坐标系
     pub fn ldao(&self, stms: &HashMap<usize, Stm>) -> Array2<f64> {
         let shls = &self.mole.basis().shls;
         let cmat_mole = self.mole.coefs().get_cmat("car", self.mole.basis()).clone();
@@ -205,12 +222,14 @@ impl<'m> Calculator<'m> {
         }
         cmat_ldao
     }
-    // 轨道定域化
+
+    /// 轨道定域化分子轨道
+    /// 使用 Pipek-Mezey 方法进行轨道定域化
     pub fn LMO(&self) {
         let mut cmat = self.mole.coefs().get_cmat("raw", self.mole.basis()).to_owned();
         let smat = self.mole.basis().get_smat("raw", self.mole.atoms()).to_owned();
         let natm = self.mole.atoms().len();
-        let uplo = self.mole.coefs().atm_uplo("raw", self.mole.basis());
+        let uplo = self.mole.basis().atm_uplo("raw");
         // let [nato, nobt] = cmat.shape().try_into().expect("获取矩阵形状失败");
         let obts = self.mole.coefs().obt_idxs(true);
         let nobt = obts.len();
@@ -274,6 +293,7 @@ impl<'m> Calculator<'m> {
     }
 }
 
+/// 使用 MOCV 方法将全局坐标系系数映射到局部坐标系再映射回来
 pub fn mocv(L: &Array2<f64>, rcoefs: &Array2<f64>, keeps: &Array2<f64>) -> Array2<f64> {
     let nrow = rcoefs.nrows();
     let Mi = if [1, 3, 5, 7, 9].contains(&nrow) {
@@ -290,75 +310,9 @@ pub fn mocv(L: &Array2<f64>, rcoefs: &Array2<f64>, keeps: &Array2<f64>) -> Array
     fcoefs
 }
 
-// #[derive(Debug, Clone)]
-// pub struct Mocv {
-//     pub stm: Stm, // 每一列是一个方向
-//     pub skeep: [usize; 1],
-//     pub pkeep: [usize; 3],
-//     pub dkeep: [usize; 5],
-// }
-
-// impl Mocv {
-//     pub fn new(stm: Stm, skeep: [usize; 1], pkeep: [usize; 3], dkeep: [usize; 5]) -> Self {
-//         Self {
-//             stm,
-//             skeep,
-//             pkeep,
-//             dkeep,
-//         }
-//     }
-
-//     pub fn pi_plan(stm: Stm) -> Self {
-//         let skeep = [0];
-//         let pkeep = [0, 0, 1];
-//         let dkeep = [0, 1, 0, 1, 0];
-//         Mocv::new(stm, skeep, pkeep, dkeep)
-//     }
-
-//     pub fn pi_line(stm: Stm) -> Self {
-//         let skeep = [0];
-//         let pkeep = [0, 0, 1];
-//         let dkeep = [0, 0, 0, 1, 0];
-//         Mocv::new(stm, skeep, pkeep, dkeep)
-//     }
-
-//     pub fn dirs(&self) -> [[f64; 3]; 3] {
-//         let stm = &self.stm;
-//         [stm.ex, stm.ey, stm.ez]
-//     }
-// }
-
-// impl fmt::Display for Mocv {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         let ds = ["dx", "dy", "dz"];
-//         write!(f, "\n")?;
-//         for j in 0..3 {
-//             write!(f, "{}:", ds[j])?;
-//             for i in 0..3 {
-//                 write!(f, "{:>10.4}", self.stm.mat[(i, j)])?;
-//             }
-//             write!(f, "\n")?;
-//         }
-//         writeln!(f, "s:{:>3}", self.skeep[0])?;
-
-//         write!(f, "p:")?;
-//         for i in 0..3 {
-//             write!(f, "{:>3}", self.pkeep[i])?;
-//         }
-//         write!(f, "\n")?;
-
-//         write!(f, "d:")?;
-//         for i in 0..self.dkeep.len() {
-//             write!(f, "{:>3}", self.dkeep[i])?;
-//         }
-//         write!(f, "\n")?;
-
-//         Ok(())
-//     }
-// }
-
 /// dest：计算目标，可以为 0:popul 或 1:order
-pub fn mocv_atos(mole: &Mole, dest: usize) -> Vec<usize> {
+/// 根据计算目标选择用于 MOCV 的原子轨道索引
+pub fn mocv_atos(mole: &Mole, dest: &MocvDest) -> Vec<usize> {
     let mut atos = vec![];
     let ato_syms = mole.basis().atos().syms("raw");
     let ato_atms = mole.basis().atos().atms("raw");
@@ -366,11 +320,6 @@ pub fn mocv_atos(mole: &Mole, dest: usize) -> Vec<usize> {
     let mut atm_syms = HashMap::new();
     let natm = mole.atoms.len();
     for i in 0..natm {
-        let nebs = mole.atoms.nebs(i);
-        if nebs.len() == 1 && mole.atoms.nebs(nebs[0]).len() != 1 {
-            atm_syms.insert(i, vec!["PX".to_string(), "XZ".to_string()]);
-            continue;
-        }
         let geom = if mole.atoms.is_line(i) { 1 } else { 0 };
         let syms = mocv_syms(dest, geom);
         atm_syms.insert(i, syms);
@@ -388,22 +337,61 @@ pub fn mocv_atos(mole: &Mole, dest: usize) -> Vec<usize> {
     atos
 }
 
-/// dest：计算目标，可以为 0:popul 或 1:order
+pub enum OrderDType {
+    SI, // σ键级
+    PI, // π键级
+    DE, // δ键级
+}
+
+pub enum MocvDest {
+    PiProperty,             // pi电子性质
+    OrderDecom(OrderDType), // 键级分解
+    RoundOrder,             // 环轴键级
+}
+
+impl MocvDest {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "PiProperty" => Some(MocvDest::PiProperty),
+            "OrderDecom-SI" => Some(MocvDest::OrderDecom(OrderDType::SI)),
+            "OrderDecom-PI" => Some(MocvDest::OrderDecom(OrderDType::PI)),
+            "OrderDecom-DE" => Some(MocvDest::OrderDecom(OrderDType::DE)),
+            "RoundOrder" => Some(MocvDest::RoundOrder),
+            _ => None,
+        }
+    }
+}
+
+// 计算目标：广义pi性质-平面/直线、键级分解、环轴键级
+/// dest：计算目标，可以为 MocvDest 枚举值
 /// geom：几何类型，可以为 0:plan 或 1:line
-#[cached]
-fn mocv_syms(dest: usize, geom: usize) -> Vec<String> {
+// #[cached]
+/// 根据计算目标和几何类型返回要保留的轨道对称性
+fn mocv_syms(dest: &MocvDest, geom: usize) -> Vec<String> {
     let syms = match (dest, geom) {
-        (0, 0) => {
-            vec!["PX", "XZ", "XY"]
+        (MocvDest::PiProperty, 0) => {
+            vec![
+                "PX", // P轨道
+                "XZ", "XY", // 笛卡尔D轨道
+                "D+1", "D-2", // 球谐D轨道
+                "XXY", "XXZ", "XYY", "XYZ", "XZZ", // 笛卡尔F轨道
+                "F-2", "F+1", "F+3", // 球谐F轨道
+            ] // 平面分子电子布局
         }
-        (0, 1) => {
-            vec!["PX", "PY", "XZ", "YZ", "D+2", "D-2"]
+        (MocvDest::PiProperty, 1) => {
+            vec!["PX", "PY", "XZ", "YZ", "D+1", "D-1"] // 线性分子电子布居
         }
-        (1, 0) => {
-            vec!["PX", "XZ"]
+        (MocvDest::OrderDecom(OrderDType::SI), 0) => {
+            vec!["PX", "D+1", "XZ", "XY", "F+1", "XZZ"]
         }
-        (1, 1) => {
-            vec!["PX", "PY", "XZ", "YZ", "D+2", "D-2"]
+        (MocvDest::OrderDecom(OrderDType::PI), 0) => {
+            vec!["PX", "D+1", "XZ", "XY", "F+1", "XZZ"]
+        }
+        (MocvDest::OrderDecom(OrderDType::DE), 0) => {
+            vec!["PX", "D+1", "XZ", "XY", "F+1", "XZZ"]
+        }
+        (MocvDest::RoundOrder, 1) => {
+            vec!["PX", "D+1", "XZ", "F+1", "XZZ"] // 线性分子键级
         }
         _ => vec![],
     };

@@ -21,25 +21,38 @@ static SHL2SYM: LazyLock<HashMap<isize, Vec<&str>>> = LazyLock::new(|| {
     map
 });
 
+/// 检查点文件(.fch/.fchk)中存储的值
 pub struct Vals {
     I: Vec<isize>,
     R: Vec<f64>,
 }
 
 #[derive(Debug, Clone)]
+/// fch文件的原子轨道计数信息
 pub struct Counts {
+    /// 原子轨道数
     pub nato: usize,
+    /// 分子轨道数
     pub nobt: usize,
+    /// α电子数
     pub nela: usize,
+    /// β电子数
     pub nelb: usize,
 }
 
 impl Counts {
+    /// 创建空的Counts实例
     pub fn blank() -> Self {
-        Counts { nato: 0, nobt: 0, nela: 0, nelb: 0 }
+        Counts {
+            nato: 0,
+            nobt: 0,
+            nela: 0,
+            nelb: 0,
+        }
     }
 }
 
+/// 高斯检查点文件(.fch/.fchk)读取器
 pub struct FchReader {
     pub path: String,
     pub marks: HashMap<String, usize>,
@@ -48,6 +61,7 @@ pub struct FchReader {
 }
 
 impl FchReader {
+    /// 创建FchReader实例,解析文件中的标记行
     pub fn new(path: &str) -> Self {
         let mut count = Counts::blank();
         let mut marks = HashMap::new();
@@ -97,9 +111,17 @@ impl FchReader {
             }
         }
 
-        FchReader { path: path.to_string(), marks: marks, count: count, lines: lines }
+        FchReader {
+            path: path.to_string(),
+            marks: marks,
+            count: count,
+            lines: lines,
+        }
     }
 
+    /// 解析fch文件中的数据块
+    ///
+    /// 根据标记名称读取对应的数据块,返回整数或浮点数向量。
     pub fn parse_block(&self, mark: &str) -> Vals {
         let mark = mark.to_string();
         if !self.marks.contains_key(&mark) {
@@ -116,7 +138,10 @@ impl FchReader {
                 let num_line = count / 6 + if count % 6 == 0 { 0 } else { 1 };
                 for l in mark_num + 1..mark_num + num_line + 1 {
                     let line = self.lines.get(l as usize).expect("获取行失败");
-                    let vals = line.split_whitespace().map(|s| s.parse().expect("转换失败")).collect::<Vec<isize>>();
+                    let vals = line
+                        .split_whitespace()
+                        .map(|s| s.parse().expect("转换失败"))
+                        .collect::<Vec<isize>>();
                     i_vals.extend(vals);
                 }
             }
@@ -124,7 +149,10 @@ impl FchReader {
                 let num_line = count / 5 + if count % 5 == 0 { 0 } else { 1 };
                 for l in mark_num + 1..mark_num + num_line + 1 {
                     let line = self.lines.get(l as usize).expect("获取行失败");
-                    let vals = line.split_whitespace().map(|s| s.parse().expect("转换失败")).collect::<Vec<f64>>();
+                    let vals = line
+                        .split_whitespace()
+                        .map(|s| s.parse().expect("转换失败"))
+                        .collect::<Vec<f64>>();
                     r_vals.extend(vals);
                 }
             }
@@ -133,10 +161,16 @@ impl FchReader {
         Vals { I: i_vals, R: r_vals }
     }
 
+    /// 读取原子序数
     pub fn read_atms(&self) -> Vec<isize> {
         self.parse_block("Atomic numbers").I
     }
 
+    pub fn read_crgs(&self) -> Vec<f64> {
+        self.parse_block("Nuclear charges").R
+    }
+
+    /// 读取笛卡尔坐标
     pub fn read_xyzs(&self) -> Vec<[f64; 3]> {
         let vals = self.parse_block("Current cartesian coordinates").R;
         let mut xyzs = Vec::new();
@@ -149,6 +183,7 @@ impl FchReader {
         xyzs
     }
 
+    /// 读取局部坐标系
     pub fn read_stms(&self) -> Option<Vec<Stm>> {
         let vals = self.parse_block("Local Coord Systems").R;
         if vals.len() == 0 {
@@ -175,17 +210,24 @@ impl FchReader {
         Some(stms)
     }
 
+    /// 读取轨道系数及其他轨道相关信息
     pub fn read_coefs(&self) -> (Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<f64>, Array2<f64>) {
         let nato = self.count.nato;
         let nobt = self.count.nobt;
         let coefs_a = self.parse_block("Alpha MO coefficients").R;
         assert_eq!(coefs_a.len(), nato * nobt);
-        let cmat_a = Array2::from_shape_vec((nobt as usize, nato as usize), coefs_a).expect("数组转矩阵失败").t().to_owned();
+        let cmat_a = Array2::from_shape_vec((nobt as usize, nato as usize), coefs_a)
+            .expect("数组转矩阵失败")
+            .t()
+            .to_owned();
         let open = self.marks.contains_key("Beta MO coefficients");
         let cmat = if open {
             let coefs_b = self.parse_block("Beta MO coefficients").R;
 
-            let cmat_b = Array2::from_shape_vec((nobt as usize, nato as usize), coefs_b).expect("数组转矩阵失败").t().to_owned();
+            let cmat_b = Array2::from_shape_vec((nobt as usize, nato as usize), coefs_b)
+                .expect("数组转矩阵失败")
+                .t()
+                .to_owned();
             let cmat = concatenate(Axis(1), &[cmat_a.view(), cmat_b.view()]).expect("矩阵拼接失败");
             cmat
         } else {
@@ -249,7 +291,7 @@ impl Reader for FchReader {
     fn get_atoms(&self) -> Atoms {
         let atms = self.read_atms().iter().map(|x| *x as usize).collect::<Vec<usize>>();
         let xyzs = self.read_xyzs();
-        let crgs = self.parse_block("Nuclear charges").R;
+        let crgs = self.read_crgs();
         let mut atoms = Atoms::new(&atms, &xyzs, &crgs);
         atoms.neles = [self.count.nela, self.count.nelb];
         atoms

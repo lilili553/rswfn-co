@@ -8,6 +8,7 @@ use crate::base::{Atoms, Basis, Coefs};
 use crate::datas::btrans;
 use crate::reader::{BasData, Reader, read_lines, shl_basis, shl_forms};
 
+/// Molden格式文件(.molden)读取器
 pub struct MdeReader {
     path: String,
     lines: Vec<String>,
@@ -23,6 +24,7 @@ pub struct MdeReader {
 }
 
 impl MdeReader {
+    /// 创建MdeReader实例
     pub fn new(path: &str) -> Self {
         let lines = read_lines(path);
         let mut marks = HashMap::new();
@@ -57,6 +59,7 @@ impl MdeReader {
         }
     }
 
+    /// 读取几何结构
     pub fn read_geome(&self) -> (Vec<usize>, Vec<[f64; 3]>) {
         let mark = self.marks.get("geome").expect("获取原子坐标标题行");
         let reg1 = Regex::new(r"[A-Za-z] +\d+ +(\d+) +(-?\d+.\d+) +(-?\d+.\d+) +(-?\d+.\d+)").unwrap();
@@ -78,6 +81,7 @@ impl MdeReader {
         (atms, xyzs)
     }
 
+    /// 读取基组信息(带缓存)
     pub fn read_basis(&self) -> (&Vec<usize>, &Vec<usize>, &Vec<String>, &Vec<BasData>) {
         let (ato_atms, ato_shls, ato_syms, datas) = self.read_basis.get_or_init(|| {
             let reg1 = Regex::new(r"^ +(\d+)( +\d)?$").expect("正则表达式构建失败");
@@ -148,7 +152,10 @@ impl MdeReader {
                     let caps = reg3_1.captures(line).expect("cap error");
                     let alp = caps[1].parse::<f64>().expect("parse error");
                     let exp = caps[2].parse::<f64>().expect("parse error");
-                    let ang = syms.iter().position(|&x| x == sym).expect(&format!("get pos error: {}", sym));
+                    let ang = syms
+                        .iter()
+                        .position(|&x| x == sym)
+                        .expect(&format!("get pos error: {}", sym));
                     datas.push((atm, shl - 1, ang, alp, exp));
                     continue;
                 }
@@ -179,6 +186,7 @@ impl MdeReader {
         (ato_atms, ato_shls, ato_syms, datas)
     }
 
+    /// 读取轨道系数
     pub fn read_coefs(&self) -> (Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
         let reg2 = Regex::new(r" Ene= +(-?\d+.\d+)").expect("reg new error");
         let reg4 = Regex::new(r" Occup= +(\d.\d+)").expect("reg new error");
@@ -228,6 +236,7 @@ impl MdeReader {
         (obt_engs, obt_occs, cmat)
     }
 
+    /// 读取电子数
     pub fn read_neles(&self) -> [usize; 2] {
         let occs = self.read_coefs().1;
         let nobt = occs.len();
@@ -276,7 +285,14 @@ impl Reader for MdeReader {
         let nato = cmat[0].len();
         let cmat = Array2::from_shape_vec((nobt, nato), cmat.into_iter().flatten().collect()).expect("cmat error");
         let cmat = cmat.t().to_owned();
-        let coefs = Coefs::new(ato_atms.clone(), ato_shls.clone(), ato_syms.clone(), obt_engs, obt_occs, cmat);
+        let coefs = Coefs::new(
+            ato_atms.clone(),
+            ato_shls.clone(),
+            ato_syms.clone(),
+            obt_engs,
+            obt_occs,
+            cmat,
+        );
         Some(coefs)
     }
 }

@@ -29,6 +29,17 @@ pub struct Ato {
 }
 
 impl Ato {
+    /// 创建一个新的原子轨道对象
+    ///
+    /// # Parameters
+    /// - `atm`: 原子索引
+    /// - `shl`: 壳层索引
+    /// - `ang`: 角动量
+    /// - `sym`: 轨道符号（如 s, px, py, pz 等）
+    /// - `loc`: 定域性（0 表示高指数定域，1 表示弥散）
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
+    /// - `alps`: 指数列表
+    /// - `coes`: 收缩系数列表
     pub fn new(
         atm: usize,
         shl: usize,
@@ -56,6 +67,9 @@ impl Ato {
             lmn,
         }
     }
+    /// 返回归一化后的收缩系数（惰性初始化）
+    ///
+    /// 对原始收缩系数进行归一化处理，考虑 (l, m, n) 阶乘因子
     pub fn coes_norm(&self) -> &Vec<f64> {
         self.coes_norm.get_or_init(|| {
             let [l, m, n] = self.lmn();
@@ -71,6 +85,7 @@ impl Ato {
         })
     }
 
+    /// 返回轨道对称性对应的 (l, m, n) 指数（惰性初始化）
     pub fn lmn(&self) -> &[usize; 3] {
         self.lmn.get_or_init(|| sym2lmn(&self.sym))
     }
@@ -84,6 +99,10 @@ pub struct Atos {
 }
 
 impl Atos {
+    /// 返回指定形式的原子轨道数量
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
     pub fn len(&self, form: &str) -> usize {
         match form {
             "raw" => self.raws.len(),
@@ -93,6 +112,10 @@ impl Atos {
         }
     }
 
+    /// 返回指定形式的原子索引列表
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
     pub fn atms(&self, form: &str) -> Vec<usize> {
         match form {
             "raw" => self.raws.iter().map(|ato| ato.atm).collect(),
@@ -102,6 +125,10 @@ impl Atos {
         }
     }
 
+    /// 返回指定形式的壳层索引列表
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
     pub fn shls(&self, form: &str) -> Vec<usize> {
         match form {
             "raw" => self.raws.iter().map(|ato| ato.shl).collect(),
@@ -111,6 +138,10 @@ impl Atos {
         }
     }
 
+    /// 返回指定形式的轨道符号列表
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
     pub fn syms(&self, form: &str) -> Vec<String> {
         match form {
             "raw" => self.raws.iter().map(|ato| ato.sym.clone()).collect(),
@@ -120,6 +151,10 @@ impl Atos {
         }
     }
 
+    /// 返回指定形式的定域性索引列表
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
     pub fn locs(&self, form: &str) -> Vec<usize> {
         match form {
             "raw" => self.raws.iter().map(|ato| ato.loc).collect(),
@@ -141,6 +176,14 @@ pub struct Shl {
 }
 
 impl Shl {
+    /// 创建一个新的壳层
+    ///
+    /// # Parameters
+    /// - `atm`: 原子索引
+    /// - `shl`: 壳层索引
+    /// - `ang`: 角动量
+    /// - `alps`: 指数列表
+    /// - `coes`: 收缩系数列表
     pub fn new(atm: usize, shl: usize, ang: usize, alps: Vec<f64>, coes: Vec<f64>) -> Self {
         Self {
             atm,
@@ -151,6 +194,7 @@ impl Shl {
             coes,
         }
     }
+    /// 返回归一化后的收缩系数
     pub fn coes_norm(&self) -> Vec<f64> {
         let mut coes = self.coes.clone();
         for i in 0..coes.len() {
@@ -162,6 +206,11 @@ impl Shl {
         coes
     }
 
+    /// 判断壳层的定域性
+    ///
+    /// # Returns
+    /// - `0`: 高指数定域（最大指数 > 10.0）
+    /// - `1`: 弥散（最大指数 <= 10.0）
     pub fn loc(&self) -> usize {
         let alp_max = self.alps.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
         if *alp_max > 10.0 { 0 } else { 1 }
@@ -178,6 +227,10 @@ const ANG_NUM_SPH: [usize; 6] = [1, 3, 5, 7, 9, 11];
 const ANG_NUM_CAR: [usize; 6] = [1, 3, 6, 10, 15, 21];
 
 impl Shls {
+    /// 创建一个新的壳层集合
+    ///
+    /// # Parameters
+    /// - `shls`: 壳层列表
     pub fn new(shls: Vec<Shl>) -> Shls {
         Shls {
             shls,
@@ -185,13 +238,25 @@ impl Shls {
         }
     }
 
+    /// 获取指定索引的壳层
+    ///
+    /// # Parameters
+    /// - `i`: 壳层索引
     pub fn get(&self, i: usize) -> &Shl {
         &self.shls[i]
     }
 
+    /// 返回壳层总数
     pub fn len(&self) -> usize {
         self.shls.len()
     }
+    /// 获取每个壳层的起止索引范围（惰性初始化）
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
+    ///
+    /// # Returns
+    /// 每个壳层对应的 [起始索引, 结束索引) 列表
     pub fn uplo(&self, form: &str) -> &Vec<[usize; 2]> {
         let uplo = self.uplo.get_or_init(|| {
             let mut uplo_raw = vec![];
@@ -226,6 +291,10 @@ impl Shls {
         }
     }
 
+    /// 返回指定形式的原子轨道总数
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
     pub fn nato(&self, form: &str) -> usize {
         let uplo = self.uplo(form);
         let mut nato = 0;
@@ -235,7 +304,10 @@ impl Shls {
         nato
     }
 
-    // 在 basis.rs 的 impl Shls 中
+    /// 按原子分组返回每个原子的起止索引范围
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
     pub fn atm_uplo(&self, form: &str) -> Vec<[usize; 2]> {
         let uplo = self.uplo(form);
         let mut atm_uplo = Vec::new();
@@ -264,6 +336,14 @@ pub struct Bas {
 }
 
 impl Bas {
+    /// 创建一个原始基函数
+    ///
+    /// # Parameters
+    /// - `atm`: 原子索引
+    /// - `shl`: 壳层索引
+    /// - `ang`: 角动量
+    /// - `alp`: 高斯指数
+    /// - `coe`: 收缩系数
     pub fn new(atm: usize, shl: usize, ang: usize, alp: f64, coe: f64) -> Self {
         Self {
             atm,
@@ -285,27 +365,38 @@ pub struct Basis {
     pub atos: OnceLock<Atos>,
     pub bass: OnceLock<Bass>,
     pub smat: OnceLock<[Array2<f64>; 3]>, // 存储球谐和笛卡尔的重叠积分
-                                          // pub mole: *const Mole,
 }
 
 impl Basis {
+    /// 从壳层列表创建新的基组
+    ///
+    /// # Parameters
+    /// - `shls`: 壳层列表
     pub fn new(shls: Vec<Shl>) -> Basis {
         let shls = Shls::new(shls);
         let atos = OnceLock::new();
         let bass = OnceLock::new();
         let smat = OnceLock::new();
-        // let mole = std::ptr::null();
         Basis { shls, atos, bass, smat }
     }
 
+    /// 用新的壳层列表重新构建基组
+    ///
+    /// # Parameters
+    /// - `shls`: 新的壳层列表
     pub fn build(&mut self, shls: Vec<Shl>) {
         self.shls = Shls::new(shls);
     }
 
+    /// 判断基组是否为空（没有壳层）
     pub fn is_none(&self) -> bool {
         self.shls.len() == 0
     }
 
+    /// 获取指定原子的所有壳层
+    ///
+    /// # Parameters
+    /// - `atm`: 原子索引
     pub fn get_by_atm(&self, atm: usize) -> Vec<Shl> {
         let mut shls = vec![];
         let nshl = self.shls.len();
@@ -318,6 +409,9 @@ impl Basis {
         shls
     }
 
+    /// 返回所有原子轨道的唯一键值列表
+    ///
+    /// 格式为 "atm,shl,sym"
     pub fn ato_keys(&self) -> Vec<String> {
         let mut keys = vec![];
         let nshl = self.shls.len();
@@ -334,6 +428,9 @@ impl Basis {
         keys
     }
 
+    /// 生成并返回原子轨道列表（惰性初始化）
+    ///
+    /// 包含 raw、sph、car 三种形式的原子轨道
     pub fn atos(&self) -> &Atos {
         let shls = &self.shls;
         let nshl = shls.len();
@@ -369,6 +466,7 @@ impl Basis {
         })
     }
 
+    /// 返回原始基函数的数量
     pub fn nbas(&self) -> usize {
         let mut nbas = 0;
         let nshl = self.shls.len();
@@ -384,11 +482,14 @@ impl Basis {
         nbas
     }
 
+    /// 返回壳层数量
     pub fn nshl(&self) -> usize {
         self.shls.len()
     }
 
-    // 判断两个基组信息是否相等
+    /// 判断两个基组信息是否相等
+    ///
+    /// 比较原子索引、壳层索引和角动量
     pub fn equal(&self, other: &Basis) -> bool {
         let datas_0 = &self.shls;
         let datas_1 = &other.shls;
@@ -415,6 +516,11 @@ impl Basis {
         return true;
     }
 
+    /// 获取指定形式的重叠积分矩阵（惰性初始化）
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
+    /// - `atoms`: 原子结构，用于积分计算
     pub fn get_smat(&self, form: &str, atoms: &Atoms) -> &Array2<f64> {
         let smats = self.smat.get_or_init(|| {
             let int_caler = RsInt::new(atoms, self);
@@ -431,6 +537,10 @@ impl Basis {
         }
     }
 
+    /// 返回按原子分组的起止索引范围
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
     pub fn atm_uplo(&self, form: &str) -> Vec<[usize; 2]> {
         self.shls.atm_uplo(form)
     }

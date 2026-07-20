@@ -3,7 +3,10 @@ use crate::base::{Mole, Vec3};
 use crate::writer::Writer;
 use crate::{maths, reader, utils, writer};
 use ndarray::{Array2, s};
-// 计算一个sp2杂化的原子的有效核电荷数, 都是经验值, 目前只算C H O, 其它的直接输出核电荷, 直接不算了
+/// 计算sp2杂化原子的有效核电荷数
+///
+/// 使用经验参数计算原子的有效核电荷数,目前支持B、C、N、O、F、S、Cl元素。
+/// 其余元素直接返回核电荷数。
 pub fn effective_charge(mole: &Mole, atm: usize) -> f64 {
     let atom = mole.atoms().get(atm);
     let sym = atom.sym.as_str();
@@ -22,12 +25,17 @@ pub fn effective_charge(mole: &Mole, atm: usize) -> f64 {
     }
 }
 
-/**
-计算2个原子主量子数最高的Slater型p轨道之间的重叠积分, 目前可计算:
-1. 2pπ-2pπ (同核和异核)
-2. 3pπ-2pπ
-此外直接输出0.14450
-*/
+/// 计算两个原子间主量子数最高的Slater型p轨道的重叠积分
+///
+/// 目前可计算:
+/// 1. 2pπ-2pπ (同核和异核)
+/// 2. 3pπ-2pπ
+/// 其他情况直接返回经验值0.14450
+///
+/// # 参数
+/// - `mole`: 分子结构
+/// - `ai`: 第一个原子的索引
+/// - `aj`: 第二个原子的索引
 pub fn overlap_integral(mole: &Mole, ai: usize, aj: usize) -> f64 {
     let atom_i = mole.atoms().get(ai);
     let atom_j = mole.atoms().get(aj);
@@ -52,13 +60,16 @@ pub fn overlap_integral(mole: &Mole, ai: usize, aj: usize) -> f64 {
         let mut sum_B2 = 0.0;
         for miu in 1..k + 2 {
             sum_B1 += maths::fac(k) as f64 / ((p * t).powi(miu as i32) * maths::fac(k - miu + 1) as f64);
-            sum_B2 += -1.0_f64.powi((k - miu) as i32) * maths::fac(k) as f64 / ((p * t).powi(miu as i32) * maths::fac(k - miu + 1) as f64);
+            sum_B2 += -1.0_f64.powi((k - miu) as i32) * maths::fac(k) as f64
+                / ((p * t).powi(miu as i32) * maths::fac(k - miu + 1) as f64);
         }
         -f64::exp(-p * t) * sum_B1 - f64::exp(p * t) * sum_B2
     };
     if row_i == 2 && row_j == 2 {
         if t != 0.0 {
-            return p.powi(5) / 32.0 * (1.0 - t.powi(2)).powf(2.5) * (A(4) * (B(0) - B(2)) + A(2) * (B(4) - B(0)) + A(0) * (B(2) - B(4)));
+            return p.powi(5) / 32.0
+                * (1.0 - t.powi(2)).powf(2.5)
+                * (A(4) * (B(0) - B(2)) + A(2) * (B(4) - B(0)) + A(0) * (B(2) - B(4)));
         } else {
             return p.powi(5) / 120.0 * (5.0 * A(4) - 6.0 * A(2) + A(0));
         }
@@ -70,6 +81,10 @@ pub fn overlap_integral(mole: &Mole, ai: usize, aj: usize) -> f64 {
     }
 }
 
+/// 计算原子的自由价
+///
+/// 根据原子类型、成键环境以及当前键级总和计算自由价。
+/// 自由价 = 最大成键能力 - 配位数 - 总键级
 pub fn free_valence(mole: &Mole, atm: usize, sum_order: f64) -> f64 {
     let atoms = mole.atoms();
     let atom = atoms.get(atm);
@@ -101,9 +116,26 @@ pub fn free_valence(mole: &Mole, atm: usize, sum_order: f64) -> f64 {
     maxfv - nebs.len() as f64 - sum_order
 }
 
-/// 用于计算dHMO和HMO键级和自由价, 需要提供分子, 键连矩阵、系数矩阵、原子轨道列表和电子数
-/// 邻接矩阵是原子轨道的邻接矩阵，键级矩阵是原子的
-pub fn HMO_Analysis(mole: &Mole, BM: &Array2<f64>, CM: &Array2<f64>, ato_atms: &Vec<usize>, nele: f64) -> (Array2<f64>, Vec<f64>, f64) {
+/// HMO分析,计算键级和自由价
+///
+/// 基于Hückel分子轨道理论,根据键连矩阵、系数矩阵和电子数计算:
+/// - 原子间的键级矩阵
+/// - 每个原子的自由价
+/// - 键级的标准差
+///
+/// # 参数
+/// - `mole`: 分子结构
+/// - `BM`: 原子轨道邻接矩阵
+/// - `CM`: 轨道系数矩阵
+/// - `ato_atms`: 原子轨道对应的原子索引列表
+/// - `nele`: 总电子数
+pub fn HMO_Analysis(
+    mole: &Mole,
+    BM: &Array2<f64>,
+    CM: &Array2<f64>,
+    ato_atms: &Vec<usize>,
+    nele: f64,
+) -> (Array2<f64>, Vec<f64>, f64) {
     let atoms = mole.atoms();
     let natm = atoms.len();
     let nato = ato_atms.len();
@@ -167,14 +199,22 @@ pub fn HMO_Analysis(mole: &Mole, BM: &Array2<f64>, CM: &Array2<f64>, ato_atms: &
 
 #[derive(Clone)]
 /// DHMO的计算结果
-pub struct DMO_RES {
-    pub atos: Vec<(usize, usize, String, [f64; 3])>, // 原子轨道 对应原子、轨道符号、轨道朝向
-    pub BM: Array2<f64>,                             // 键连矩阵
-    pub CM: Array2<f64>,                             // 轨道系数矩阵
-    pub es: Vec<f64>,                                // 分子轨道的能量
+pub struct DmoRes {
+    /// 原子轨道列表,每个元素包含(原子索引,壳层索引,轨道符号,轨道方向向量)
+    pub atos: Vec<(usize, usize, String, [f64; 3])>,
+    /// 键连矩阵
+    pub BM: Array2<f64>,
+    /// 轨道系数矩阵
+    pub CM: Array2<f64>,
+    /// 分子轨道的能量
+    pub es: Vec<f64>,
 }
 
-pub fn dhmo_calc(path: String) -> (Box<Mole>, DMO_RES) {
+/// 执行dHMO计算
+///
+/// 读取.dmi输入文件,构建哈密顿矩阵并求解广义本征值问题,
+/// 得到轨道系数和能量,返回分子结构和dHMO计算结果。
+pub fn dhmo_calc(path: String) -> (Box<Mole>, DmoRes) {
     // 计算原子的局部坐标系
 
     let dmi_reader = reader::DmoReader::new(&path);
@@ -216,7 +256,8 @@ pub fn dhmo_calc(path: String) -> (Box<Mole>, DMO_RES) {
             let sij = overlap_integral(&mole, ai, aj);
             let fd = sij / s135;
             // 元素矫正因子
-            let fe = (effective_charge(&mole, ai).powi(2) + effective_charge(&mole, aj).powi(2)) / (2.0 * 4.085_f64.powi(2));
+            let fe =
+                (effective_charge(&mole, ai).powi(2) + effective_charge(&mole, aj).powi(2)) / (2.0 * 4.085_f64.powi(2));
             if fa.is_nan() || fd.is_nan() || fe.is_nan() {
                 log::error!("校正系数包含NaN,fa={:>10.4},fd={:>10.4},fe={:>10.4}", fa, fd, fe);
                 panic!("校正系数包含NaN");
@@ -230,7 +271,12 @@ pub fn dhmo_calc(path: String) -> (Box<Mole>, DMO_RES) {
     let mut engs = engs.flatten().to_vec();
     let cmat = cmat.slice_move(s![..,..;-1]);
     engs.reverse();
-    let res = DMO_RES { atos, BM, CM: cmat, es: engs };
+    let res = DmoRes {
+        atos,
+        BM,
+        CM: cmat,
+        es: engs,
+    };
     (Box::new(mole), res)
 }
 

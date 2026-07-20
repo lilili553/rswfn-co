@@ -1,5 +1,9 @@
+/*
+ * http://sobereva.com/125
+ * 所有坐标、平移矢量单位都是bohr而不是埃
+ */
+
 use crate::base::Mole;
-use crate::datas::consts::BOHR;
 use crate::datas::elems;
 use crate::utils::fort_form;
 use crate::writer::Writer;
@@ -7,19 +11,27 @@ use chrono::Local;
 use std::fs::File;
 use std::io::prelude::*;
 
-// 代码中都是原子单位，读取和写入都转为Ångström
+/// Cub格式文件(.cub)写入器
 pub struct CubWriter {
-    pub title: String,       // 标题
-    pub syms: Vec<String>,   // 原子符号
-    pub xyzs: Vec<[f64; 3]>, // 原子坐标
-    pub obts: Vec<isize>,    // 轨道索引
-    pub pos0: [f64; 3],      // 起始坐标
-    pub size: [usize; 3],    // 三个方向的格点数量
-    pub step: [f64; 3],      // 三个方向格点步长
-    pub vals: Vec<Vec<f64>>, // 数值: [轨道,格点]
+    pub title: String, // 标题
+    /// 原子符号列表
+    pub syms: Vec<String>,
+    /// 原子坐标
+    pub xyzs: Vec<[f64; 3]>,
+    /// 轨道索引
+    pub obts: Vec<isize>,
+    /// 起始坐标
+    pub pos0: [f64; 3],
+    /// 三个方向的格点数量
+    pub size: [usize; 3],
+    /// 三个方向格点步长
+    pub step: [f64; 3],
+    /// 数值: [轨道,格点]
+    pub vals: Vec<Vec<f64>>,
 }
 
 impl CubWriter {
+    /// 创建CubWriter实例
     pub fn new() -> Self {
         Self {
             title: "generate by rswfn".to_string(),
@@ -42,10 +54,10 @@ impl CubWriter {
         let [x0, y0, z0] = self.pos0;
         let [sx, sy, sz] = self.step;
         let natm = self.syms.len() as isize;
-        write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", -natm, x0 / BOHR, y0 / BOHR, z0 / BOHR).unwrap();
-        write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", nx, sx / BOHR, 0.0, 0.0).unwrap();
-        write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", ny, 0.0, sy / BOHR, 0.0).unwrap();
-        write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", nz, 0.0, 0.0, sz / BOHR).unwrap();
+        write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", -natm, x0, y0, z0).unwrap();
+        write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", nx, sx, 0.0, 0.0).unwrap();
+        write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", ny, 0.0, sy, 0.0).unwrap();
+        write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}\n", nz, 0.0, 0.0, sz).unwrap();
     }
 
     fn write_coord(&mut self, file: &mut File) {
@@ -54,7 +66,12 @@ impl CubWriter {
             let sym = &self.syms[i];
             let atm = elems::sym2atm(sym);
             let [x, y, z] = self.xyzs[i];
-            write!(file, "{:>5}{:>12.6}{:>12.6}{:>12.6}{:>12.6}\n", atm, atm as f64, x / BOHR, y / BOHR, z / BOHR).unwrap();
+            write!(
+                file,
+                "{:>5}{:>12.6}{:>12.6}{:>12.6}{:>12.6}\n",
+                atm, atm as f64, x, y, z
+            )
+            .unwrap();
         }
     }
 
@@ -95,6 +112,7 @@ impl CubWriter {
         }
     }
 
+    /// 将数据保存到文件
     pub fn save(&mut self, path: &str) {
         let mut file = File::create(path).unwrap();
         self.write_grids(&mut file);

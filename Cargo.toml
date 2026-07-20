@@ -39,10 +39,10 @@ panic = "abort"   # Higher performance by disabling panic handlers.
 debug = true      # 进行性能测试的时候需要打开
 
 [features]
-default = ["use-mkl", "use-lina"]
+default = ["use-imkl", "use-lina"] # 默认使用intel-mkl
 use-cint = []                                 # 使用libcint
 use-func = []                                 # 使用泛函库
-use-blas = ["ndarray-linalg/openblas-system"]
-use-mkl = ["ndarray-linalg/intel-mkl-static"]
 use-faer = ["faer"]
 use-lina = ["ndarray-linalg"]
+use-blas = ["ndarray-linalg/openblas-system"]
+use-imkl = ["ndarray-linalg/intel-mkl-static"]

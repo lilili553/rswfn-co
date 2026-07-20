@@ -1,4 +1,4 @@
-// 读取orca的输出文件
+/// Orca输出文件(.out)读取器
 use ndarray::Array2;
 use regex::Regex;
 
@@ -9,13 +9,18 @@ use std::collections::HashMap;
 use std::vec;
 
 pub struct OutReader {
+    /// 文件中各数据块的位置标记
     pub marks: HashMap<String, usize>,
+    /// 文件行
     pub lines: Vec<String>,
+    /// 原子数量
     pub natm: usize,
+    /// 原子轨道数量
     pub nato: usize,
 }
 
 impl OutReader {
+    /// 创建OutReader实例,解析文件中的标记位置
     pub fn new(path: &str) -> OutReader {
         let mut marks = HashMap::new();
         // println!("读取out:{}", path);
@@ -42,9 +47,15 @@ impl OutReader {
                 nato = line[47..].trim().parse().unwrap();
             }
         }
-        OutReader { marks, lines, natm, nato }
+        OutReader {
+            marks,
+            lines,
+            natm,
+            nato,
+        }
     }
 
+    /// 读取几何结构
     pub fn read_geome(&self) -> (Vec<String>, Vec<[f64; 3]>) {
         let mark = self.marks.get("geome").unwrap();
         let mut syms = vec![];
@@ -65,6 +76,7 @@ impl OutReader {
         (syms, xyzs)
     }
 
+    /// 读取基组信息
     pub fn read_basis(&self) -> HashMap<usize, Vec<(i32, usize, f64, f64)>> {
         let mark = self.marks.get("basis").unwrap();
         let reg1 = Regex::new(r"^ ([SPD]) \d ").expect("正则表达式构建失败");
@@ -101,6 +113,7 @@ impl OutReader {
         data
     }
 
+    /// 读取轨道系数
     pub fn read_coefs(&self) -> (Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<f64>, Array2<f64>) {
         let mark = self.marks.get("coefs").unwrap();
         let nato = self.nato;
@@ -118,17 +131,33 @@ impl OutReader {
             println!("lidx:{},{}", lidx, self.lines[lidx]);
             let idx_part = &self.lines[lidx + 0][16..];
             println!("idx_part:{}", idx_part);
-            let idxs: Vec<usize> = idx_part.char_indices().step_by(10).map(|(i, _)| idx_part[i..i + 10].trim().parse().unwrap()).collect();
+            let idxs: Vec<usize> = idx_part
+                .char_indices()
+                .step_by(10)
+                .map(|(i, _)| idx_part[i..i + 10].trim().parse().unwrap())
+                .collect();
             let eng_part = &self.lines[lidx + 1][16..];
-            let engs: Vec<f64> = eng_part.char_indices().step_by(10).map(|(i, _)| eng_part[i..i + 10].trim().parse().unwrap()).collect();
+            let engs: Vec<f64> = eng_part
+                .char_indices()
+                .step_by(10)
+                .map(|(i, _)| eng_part[i..i + 10].trim().parse().unwrap())
+                .collect();
             obt_engs.extend(engs);
             let occ_part = &self.lines[lidx + 2][16..];
-            let occs: Vec<f64> = occ_part.char_indices().step_by(10).map(|(i, _)| occ_part[i..i + 10].trim().parse().unwrap()).collect();
+            let occs: Vec<f64> = occ_part
+                .char_indices()
+                .step_by(10)
+                .map(|(i, _)| occ_part[i..i + 10].trim().parse().unwrap())
+                .collect();
             obt_occs.extend(occs);
             for ato in 0..nato {
                 let line = &self.lines[lidx + 4 + ato];
                 let coef_part = &line[16..];
-                let coefs: Vec<f64> = coef_part.char_indices().step_by(10).map(|(i, _)| coef_part[i..i + 10].trim().parse().unwrap()).collect();
+                let coefs: Vec<f64> = coef_part
+                    .char_indices()
+                    .step_by(10)
+                    .map(|(i, _)| coef_part[i..i + 10].trim().parse().unwrap())
+                    .collect();
                 for (i, obt) in idxs.iter().enumerate() {
                     cmat[[ato, *obt]] = coefs[i];
                 }
@@ -146,6 +175,7 @@ impl OutReader {
         (ato_atms, ato_shls, ato_syms, obt_engs, obt_occs, cmat)
     }
 
+    /// 读取轨道能量和占据数
     pub fn read_obtEngs(&self) -> (Vec<f64>, Vec<f64>) {
         let mark = self.marks.get("obtEngs").unwrap();
         let mut occs = vec![];

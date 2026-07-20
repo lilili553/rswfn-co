@@ -1,0 +1,120 @@
+use rswfn::atomprop;
+use rswfn::base::Mole;
+
+mod utils;
+use utils::allclose;
+
+#[test]
+/// 测试苯环mulliken电荷
+fn test1() {
+    let path = String::from(r"E:\code\rswfn\moles\C6H6.fch");
+    let mole = Mole::from_file(&path);
+
+    let caler = atomprop::charge::Calculator::new(&mole);
+    let res = caler.mulliken();
+    let ans = vec![
+        6.12846023, 6.12846024, 6.12846023, 6.12846023, 6.12846024, 6.12846023, 0.87153977, 0.87153977, 0.87153977,
+        0.87153977, 0.87153977, 0.87153977,
+    ];
+    assert!(allclose(res, ans, 1e-4));
+}
+
+#[test]
+/// 测试苯环lowdin电荷
+fn test2() {
+    let path = String::from(r"E:\code\rswfn\moles\C6H6.fch");
+    let mole = Mole::from_file(&path);
+    let caler = atomprop::charge::Calculator::new(&mole);
+    let res = caler.lowdin();
+    let ans = vec![
+        6.15647202, 6.15982449, 6.15982449, 6.15647202, 6.15982449, 6.15982449, 0.84289460, 0.84049220, 0.84049220,
+        0.84289460, 0.84049220, 0.84049220,
+    ];
+    assert!(allclose(res, ans, 1e-4));
+}
+
+#[test]
+/// 测试苯环hirshfeld电荷
+fn test3() {
+    let path = String::from(r"E:\code\rswfn\moles\C6H6.fch");
+    let mole = Mole::from_file(&path);
+    let caler = atomprop::charge::Calculator::new(&mole);
+    let mut res = caler.hirshfeld();
+    let res = (0..res.len()).map(|atm| mole.atoms.get(atm).crg - res[atm]).collect();
+    let ans = vec![
+        -0.04268004,
+        -0.04261213,
+        -0.04261213,
+        -0.04268004,
+        -0.04261213,
+        -0.04261213,
+        0.04262433,
+        0.04263998,
+        0.04263999,
+        0.04262433,
+        0.04263998,
+        0.04263999,
+    ];
+    assert!(allclose(res, ans, 1e-4));
+}
+
+#[test]
+/// 测试苯环pocv方法pi电子布居
+fn test4() {
+    let path = String::from(r"E:\code\rswfn\moles\C6H6.fch");
+    let mole = Mole::from_file(&path);
+
+    let caler = atomprop::charge::Calculator::new(&mole);
+    let (dirs, vals) = caler.pi_pocv("mulliken").unwrap();
+    let ans = vec![
+        0.98514, 0.98514, 0.98514, 0.98514, 0.98514, 0.98514, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    ];
+    println!("pi_pocv:{:?}", vals);
+    assert!(allclose(vals, ans, 1e-4));
+}
+
+#[test]
+/// 测试苯环mocv方法pi电子布居
+fn test5() {
+    let path = String::from(r"E:\code\rswfn\moles\C6H6.fch");
+    let mole = Mole::from_file(&path);
+
+    let caler = atomprop::charge::Calculator::new(&mole);
+    let (dirs, atos, vals) = caler.pi_mocv_v1("mulliken").unwrap();
+    let ans = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    println!("pi_mocv:{:?}", vals);
+    assert!(allclose(vals, ans, 1e-4));
+}
+
+/// 测试C6H6^- 自旋布居
+fn test6() {
+    let path = String::from(r"E:\code\rswfn\moles\C6H6_N.fch");
+    let mole = Mole::from_file(&path);
+    let caler = atomprop::charge::Calculator::new(&mole);
+    let res = caler.spin("mulliken").iter().map(|row| row[2]).collect();
+    let ans = vec![
+        -0.11890, 0.32872, 0.32872, -0.11890, 0.32872, 0.32872, 0.00392, -0.02123, -0.02123, 0.00392, -0.02123,
+        -0.02123,
+    ];
+    assert!(allclose(res, ans, 1e-4));
+}
+
+#[test]
+/// 测试苯酚福井函数
+fn test7() {
+    let mole0 = Mole::from_file(r"E:\code\rswfn\moles\phenol.out");
+    let molen = Mole::from_file(r"E:\code\rswfn\moles\phenol_N+1.out");
+    let molep = Mole::from_file(r"E:\code\rswfn\moles\phenol_N-1.out");
+    let caler = atomprop::activity::Calculator::new(&mole0);
+    // 比较双描述符
+    let res: Vec<f64> = caler
+        .fukui(&molen, &molep, "hirshfeld")
+        .iter()
+        .map(|row| row[6])
+        .collect();
+    let ans = vec![
+        -0.0935, 0.0521, 0.0429, -0.0741, 0.0429, 0.0521, -0.0129, 0.0164, 0.0151, 0.0151, 0.0164, -0.0522, -0.0202,
+    ];
+    println!("res:{:?}", res);
+    assert!(allclose(res, ans, 1e-3));
+}

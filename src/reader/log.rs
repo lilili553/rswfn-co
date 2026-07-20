@@ -10,18 +10,23 @@ use std::collections::HashMap;
 use std::process::exit;
 use std::sync::OnceLock;
 
-// 一个振动频率
-#[derive(Debug, Clone)]
+/// 振动频率信息
+///
+/// 包含频率、约化质量、力常数、红外强度及振动模式向量。
 pub struct Vibe {
     pub freq: f64,
+    /// 约化质量
     pub redm: f64,
+    /// 力常数
     pub frcc: f64,
+    /// 红外强度
     pub irin: f64,
+    /// 原子振动位移向量列表
     pub vibs: Vec<[f64; 3]>,
 }
 
 impl Vibe {
-    // 获取震动幅度最大的原子及方向
+    /// 获取振动幅度最大的原子及其位移方向
     pub fn get_max(&self) -> (usize, [f64; 3], f64) {
         let mut max_idx = 0;
         let mut max_vib = [0.0; 3];
@@ -38,20 +43,25 @@ impl Vibe {
     }
 }
 
+/// 高斯输出文件(.log)读取器
 pub struct LogReader {
     path: String,
+    /// 文件中各数据块的位置标记
     pub marks: HashMap<String, usize>,
+    /// 文件全部行
     pub lines: Vec<String>,
     nato: usize,
     nobt: usize,
+    /// 分子电荷
     pub charge: isize,
+    /// 自旋多重度
     pub multip: usize,
     _job: OnceLock<String>,
     _coefs: OnceLock<Option<(Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>)>>,
 }
 
 impl LogReader {
-    // 搜索标题行，找到每块数据的位置
+    /// 创建LogReader实例并解析文件中的标记位置
     pub fn new(path: &str) -> LogReader {
         let mut marks: HashMap<String, usize> = HashMap::new();
         let lines = read_lines(path);
@@ -142,6 +152,7 @@ impl LogReader {
         }
     }
 
+    /// 读取作业关键词
     pub fn read_job(&self) -> &String {
         self._job.get_or_init(|| {
             let title_number = match self.marks.get("job") {
@@ -162,7 +173,7 @@ impl LogReader {
         })
     }
 
-    // 读取系数矩阵
+    /// 读取系数矩阵
     pub fn _read_coefs(&self, spin: &str) -> (Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>) {
         let mark = self.marks.get(spin).unwrap();
         let job = self.read_job();
@@ -282,6 +293,7 @@ impl LogReader {
         (ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat)
     }
 
+    /// 读取轨道系数(缓存结果)
     pub fn read_coefs(&self) -> &Option<(Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>)> {
         self._coefs.get_or_init(|| {
             if self.marks.contains_key("coefs") {
@@ -306,6 +318,10 @@ impl LogReader {
         })
     }
 
+    /// 读取分子几何结构
+    ///
+    /// # 参数
+    /// - `irow`: 可选,指定起始行号,为None时自动查找
     pub fn read_geome(&self, irow: Option<usize>) -> (Vec<usize>, Vec<[f64; 3]>) {
         let reg =
             Regex::new(r" +\d+ +(\d+) +\d +(-?\d+.\d{6}) +(-?\d+.\d{6}) +(-?\d+.\d{6})").expect("正则表达式构建失败");
@@ -337,6 +353,7 @@ impl LogReader {
         (atms, xyzs)
     }
 
+    /// 读取所有优化步的几何结构
     pub fn read_geomes(&self) -> Vec<Atoms> {
         let mut geomes = Vec::new();
         let job = self.read_job();
@@ -362,6 +379,7 @@ impl LogReader {
         }
     }
 
+    /// 读取热力学能量数据
     pub fn read_energys(&self) -> Option<Vec<f64>> {
         let marks = vec![
             "Zero-point correction",
@@ -402,6 +420,7 @@ impl LogReader {
         }
     }
 
+    /// 读取振动频率
     pub fn read_freqs(&self) -> Option<Vec<f64>> {
         let mut freqs = Vec::new();
         for line in self.lines.iter() {
@@ -420,7 +439,7 @@ impl LogReader {
         }
     }
 
-    // 读取对称矩阵
+    /// 读取对称矩阵
     pub fn read_symMat(&self, mut row: usize, loc: usize) -> Array2<f64> {
         let nato = self.nato as isize;
         let mut nrow = nato;
@@ -456,6 +475,7 @@ impl LogReader {
         matrix
     }
 
+    /// 读取密度矩阵
     pub fn read_dmat(&self) -> Option<Array2<f64>> {
         let row = match self.marks.get("density") {
             None => return None,
@@ -465,6 +485,7 @@ impl LogReader {
         Some(dmat)
     }
 
+    /// 读取重叠矩阵
     pub fn read_smat(&self) -> Option<Array2<f64>> {
         let row = match self.marks.get("overlap") {
             None => return None,
@@ -474,6 +495,7 @@ impl LogReader {
         Some(dmat)
     }
 
+    /// 读取动能矩阵
     pub fn read_tmat(&self) -> Option<Array2<f64>> {
         let row = match self.marks.get("kinetic") {
             None => return None,
@@ -483,6 +505,7 @@ impl LogReader {
         Some(dmat)
     }
 
+    /// 读取势能矩阵
     pub fn read_vmat(&self) -> Option<Array2<f64>> {
         let row = match self.marks.get("Potential") {
             None => return None,
@@ -492,28 +515,29 @@ impl LogReader {
         Some(dmat)
     }
 
-    // 读取赝势基组每个原子的有效核电荷数
+    /// 读取赝势基组的有效核电荷数
     pub fn read_ecps(&self) -> Option<HashMap<usize, usize>> {
         let row = match self.marks.get("ecp") {
             None => return None,
             Some(idx) => idx + 1,
         } as usize;
-        let mut crgs = HashMap::new();
+        let mut ecps = HashMap::new();
         let reg1 = Regex::new(r" [A-Za-z]+(\d+)-ECP +\d +(\d+)").expect("正则表达式构建失败");
         for line in self.lines.iter().skip(row) {
             if reg1.is_match(line) {
                 let caps = reg1.captures(line).expect("正则匹配失败");
                 let atm = caps[1].parse::<usize>().expect("解析失败");
-                let ele = caps[2].parse::<usize>().expect("解析失败");
-                crgs.insert(atm, ele);
+                let ecp = caps[2].parse::<usize>().expect("解析失败");
+                ecps.insert(atm - 1, ecp);
             }
             if line == " " {
                 break;
             }
         }
-        Some(crgs)
+        Some(ecps)
     }
 
+    /// 读取振动模式信息
     pub fn read_vibrations(&self) -> Option<Vec<Vibe>> {
         let mut vibrations: Vec<Vibe> = vec![];
         let irow = match self.marks.get("vibrations") {
@@ -586,22 +610,17 @@ impl Reader for LogReader {
         let (atms, xyzs) = self.read_geome(None);
 
         let mut crgs: Vec<f64> = atms.iter().map(|atm| *atm as f64).collect();
-
-        let ecps = self.read_ecps();
-        match ecps {
-            None => {}
-            Some(ecps) => {
-                for (idx, ele) in ecps.iter() {
-                    let idx = *idx as usize - 1;
-                    crgs[idx] = (atms[idx] - *ele) as f64;
-                }
+        if let Some(ecps) = self.read_ecps() {
+            for (idx, ecp) in ecps.iter() {
+                crgs[*idx] = (atms[*idx] - *ecp) as f64;
             }
-        };
+        }
+
         let mut atoms = Atoms::new(&atms, &xyzs, &crgs);
         let C = self.charge;
-        let S = self.multip as isize;
+        let S = self.multip;
         let N = atoms.crgs().iter().sum::<f64>() as usize;
-        let neles = reader::charge_number(C, S as usize, N as usize);
+        let neles = reader::charge_number(C, S, N);
         atoms.neles = neles;
         atoms
     }
@@ -679,11 +698,8 @@ impl Reader for LogReader {
     }
 
     fn get_coefs(&self) -> Option<Coefs> {
-        let charge = self.charge;
-        let multip = self.multip;
-        let crgs = self.read_geome(None).0;
-        let total = crgs.iter().sum::<usize>();
-        let [nela, nelb] = charge_number(charge, multip, total);
+        let atoms = self.get_atoms();
+        let [nela, nelb] = atoms.neles;
         let coefs = self.read_coefs();
         if let Some(coefs) = coefs {
             let (ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat) = coefs;

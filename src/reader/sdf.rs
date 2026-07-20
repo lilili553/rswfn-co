@@ -2,17 +2,23 @@ use crate::base::{Atoms, Bas, Basis, Coefs};
 use crate::datas::elems::sym2atm;
 use crate::reader::{Reader, read_lines};
 
+/// Sdf格式文件(.sdf)读取器
 pub struct SdfReader {
     path: String,
     lines: Vec<String>,
 }
 
 impl SdfReader {
+    /// 创建SdfReader实例
     pub fn new(path: &str) -> Self {
         let lines = read_lines(path);
-        Self { path: path.to_string(), lines }
+        Self {
+            path: path.to_string(),
+            lines,
+        }
     }
 
+    /// 读取几何结构
     pub fn read_geome(&self) -> (Vec<usize>, Vec<[f64; 3]>) {
         let mut atms = vec![];
         let mut xyzs = vec![];

@@ -4,6 +4,18 @@ use crate::datas::btrans;
 /// 局部坐标系与全局坐标系的变换矩阵 Cg=Mt@Cl
 use ndarray::Array2;
 
+/// 根据壳层维度自动选择合适的变换矩阵
+pub fn get_tmat(num: usize, lmat: &Array2<f64>) -> Array2<f64> {
+    if [1, 3, 5, 7, 9].contains(&num) {
+        return get_tmat_car(num, lmat);
+    }
+    if [1, 3, 6, 10, 15].contains(&num) {
+        return get_tmat_sph(num, lmat);
+    }
+    panic!("不支持的类型:{}", num)
+}
+
+/// 获取球谐函数形式的变换矩阵
 pub fn get_tmat_sph(num: usize, lmat: &Array2<f64>) -> Array2<f64> {
     match num {
         01 => tmat_s(lmat),
@@ -40,10 +52,12 @@ fn get_ts(L: &Array2<f64>) -> [f64; 9] {
     return [L11, L12, L13, L21, L22, L23, L31, L32, L33];
 }
 
+/// 获取 s 轨道的变换矩阵（始终返回1x1单位矩阵）
 pub fn tmat_s(L: &Array2<f64>) -> Array2<f64> {
     Array2::ones((1, 1))
 }
 
+/// 获取 p 轨道的变换矩阵
 pub fn tmat_p(L: &Array2<f64>) -> Array2<f64> {
     let mut MP: Array2<f64> = Array2::zeros((3, 3));
     let [L11, L12, L13, L21, L22, L23, L31, L32, L33] = get_ts(L);
@@ -59,6 +73,7 @@ pub fn tmat_p(L: &Array2<f64>) -> Array2<f64> {
     MP
 }
 
+/// 获取 d 轨道的变换矩阵
 pub fn tmat_d(L: &Array2<f64>) -> Array2<f64> {
     let [L11, L12, L13, L21, L22, L23, L31, L32, L33] = get_ts(L);
     let mut MD: Array2<f64> = Array2::zeros((6, 6));
@@ -102,6 +117,7 @@ pub fn tmat_d(L: &Array2<f64>) -> Array2<f64> {
 }
 
 // #[rustfmt::skip]
+/// 获取 f 轨道的变换矩阵
 pub fn tmat_f(L: &Array2<f64>) -> Array2<f64> {
     let [L11, L12, L13, L21, L22, L23, L31, L32, L33] = get_ts(L);
     let mut MF: Array2<f64> = Array2::zeros((10, 10));
@@ -204,11 +220,13 @@ pub fn tmat_f(L: &Array2<f64>) -> Array2<f64> {
     MF[(9, 6)] = L11 * L32 * L33 + L12 * L31 * L33 + L13 * L31 * L32;
     MF[(9, 7)] = L21 * L32 * L33 + L22 * L31 * L33 + L23 * L31 * L32;
     MF[(9, 8)] = L21 * L22 * L33 + L21 * L23 * L32 + L22 * L23 * L31;
-    MF[(9, 9)] = L11 * L22 * L33 + L11 * L23 * L32 + L12 * L21 * L33 + L12 * L23 * L31 + L13 * L21 * L32 + L13 * L22 * L31;
+    MF[(9, 9)] =
+        L11 * L22 * L33 + L11 * L23 * L32 + L12 * L21 * L33 + L12 * L23 * L31 + L13 * L21 * L32 + L13 * L22 * L31;
     MF
 }
 
 #[rustfmt::skip]
+/// 获取 g 轨道的变换矩阵
 pub fn tmat_g(L: &Array2<f64>) -> Array2<f64> {
     let [L11, L12, L13, L21, L22, L23, L31, L32, L33] = get_ts(L);
     let mut MG: Array2<f64> = Array2::zeros((10, 10));
@@ -459,18 +477,21 @@ fn get_nmat(lmns: &Vec<[usize; 3]>) -> Array2<f64> {
 }
 
 #[rustfmt::skip]
+/// 获取 d 轨道的归一化矩阵
 pub fn nmat_d()->Array2<f64>{
     let lmns=btrans::CAR_D_LMNS.to_vec();
     get_nmat(&lmns)
 }
 
 #[rustfmt::skip]
+/// 获取 f 轨道的归一化矩阵
 pub fn nmat_f()->Array2<f64>{
     let lmns=btrans::CAR_F_LMNS.to_vec();
     get_nmat(&lmns)
 }
 
 #[rustfmt::skip]
+/// 获取 g 轨道的归一化矩阵
 pub fn nmat_g()->Array2<f64>{
     let lmns=btrans::CAR_G_LMNS.to_vec();
     get_nmat(&lmns)

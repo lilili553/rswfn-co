@@ -8,17 +8,25 @@ use crate::{atomprop, integ, maths};
 use crate::{base::Mole, utils};
 use ndarray::{Array1, Array2, Array4, s};
 
+/// 闭壳层Hartree-Fock计算器
 pub struct RHF<'m> {
+    /// 分子结构引用
     pub mole: &'m Mole,
-    pub use_lstm: bool,   // 是否使用局部坐标系
-    pub int_form: String, // 积分形式
+    /// 是否使用局部坐标系
+    pub use_lstm: bool,
+    /// 积分形式("sph"或"car")
+    pub int_form: String,
 }
 
 impl<'m> RHF<'m> {
     pub fn new(mole: &'m Mole) -> Self {
         let use_lstm = false;
         let int_form = "sph".to_string();
-        Self { mole, use_lstm, int_form }
+        Self {
+            mole,
+            use_lstm,
+            int_form,
+        }
     }
 
     // 计算闭壳层密度矩阵
@@ -88,7 +96,12 @@ impl<'m> RHF<'m> {
         eng
     }
 
-    // 实现RHF方法，双电子积分需要外部传入，因为自己算的太慢了
+    /// 实现RHF自洽场计算
+    ///
+    /// 通过迭代求解Roothaan方程,收敛后返回电子能量和分子轨道系数。
+    ///
+    /// # 参数
+    /// - `emat`: 可选的双电子积分,不提供时内部自动计算
     pub fn run(&self, emat: Option<Mat2e>) -> (f64, Coefs) {
         println!("开始计算");
         // let map_ato = self.mole.basis().map_ato();
@@ -173,15 +186,18 @@ impl<'m> RHF<'m> {
     }
 }
 
+/// 开壳层(自旋非限制)Hartree-Fock计算器
 pub struct UHF<'m> {
+    /// 分子结构引用
     pub mole: &'m Mole,
 }
 
 impl<'m> UHF<'m> {
+    /// 创建新的UHF计算器
     pub fn new(mole: &'m Mole) -> Self {
         Self { mole }
     }
-    // 计算开壳层密度矩阵，两个密度矩阵
+    /// 开壳层密度矩阵计算,对α和β电子分别计算
     pub fn calc_udmat(
         &self,
         nele: [usize; 2],        // alpha 和 beta 电子数
@@ -249,7 +265,9 @@ impl<'m> UHF<'m> {
         return [engas.sum() * 0.5, engbs.sum() * 0.5];
     }
 
-    // 计算开壳层的hf
+    /// 计算开壳层HF的自洽场
+    ///
+    /// 迭代求解Pople-Nesbet方程,返回α和β电子的能量、轨道能量和系数矩阵。
     pub fn calc_uhf(&self) -> ([f64; 2], [Array1<f64>; 2], [Array2<f64>; 2]) {
         let atos = &self.mole.basis().atos().sphs;
         let nato = atos.len();
@@ -295,7 +313,12 @@ impl<'m> UHF<'m> {
                 beta = 1.0;
             }
 
-            log::info!("epoch:{i:>2},电子能量:{:>10.4} + {:>10.4} = {:>14.8}", eng[0], eng[1], eng[0] + eng[1]);
+            log::info!(
+                "epoch:{i:>2},电子能量:{:>10.4} + {:>10.4} = {:>14.8}",
+                eng[0],
+                eng[1],
+                eng[0] + eng[1]
+            );
             if (eng[0] + eng[1] - old_eng).abs() < 1e-6 {
                 break;
             }

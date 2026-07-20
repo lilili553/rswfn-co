@@ -2008,6 +2008,7 @@ rad_dens.insert(103,vec![
     rad_dens
 });
 
+/// 通过拉格朗日插值从径向密度表中获取指定距离处的电子密度（方法一）
 pub fn get_rad_dens_v1(atomic: usize, dist: f64) -> f64 {
     let rad_dens = match RAD_DENS.get(&atomic) {
         Some(v) => v,
@@ -2021,7 +2022,7 @@ pub fn get_rad_dens_v1(atomic: usize, dist: f64) -> f64 {
     val
 }
 
-// Atomic Density Parameters H-Ar 数据来源于  https://pubs.acs.org/doi/suppl/10.1021/ja100936w/suppl_file/ja100936w_si_001.pdf
+/// 原子密度参数（H-Ar），数据来源于 https://pubs.acs.org/doi/suppl/10.1021/ja100936w/suppl_file/ja100936w_si_001.pdf
 #[rustfmt::skip]
 pub static ADP: LazyLock<Vec<Vec<f64>>> = LazyLock::new(|| {
     let adp = vec![
@@ -2047,6 +2048,7 @@ pub static ADP: LazyLock<Vec<Vec<f64>>> = LazyLock::new(|| {
     adp
 });
 
+/// 通过指数衰减函数拟合获取指定距离处的电子密度（方法二）
 pub fn get_rad_dens_v2(atomic: usize, dist: f64) -> f64 {
     let paras = ADP.get(atomic as usize).expect("不支持的元素类型");
 

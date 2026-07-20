@@ -9,7 +9,9 @@ use ndarray::{Array2, s};
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-// 读取自己创造的dmi文件 DMO input
+/// dmi/dmo文件读取器
+///
+/// 读取自定义的dmi/dmo格式文件,包含原子轨道信息。
 pub struct DmoReader {
     pub path: String,
     pub lines: Vec<String>,
@@ -19,6 +21,7 @@ pub struct DmoReader {
 }
 
 impl DmoReader {
+    /// 创建DmoReader实例,解析文件中的标记位置
     pub fn new(path: &str) -> Self {
         let mut marks = HashMap::new();
         let lines = read_lines(path);
@@ -43,9 +46,16 @@ impl DmoReader {
         let path = path.to_string();
         let atms = OnceLock::new();
         let dirs = OnceLock::new();
-        Self { path, lines, marks, atms, dirs }
+        Self {
+            path,
+            lines,
+            marks,
+            atms,
+            dirs,
+        }
     }
 
+    /// 读取原子信息(带缓存)
     pub fn read_atms(&self) -> &(Vec<usize>, Vec<[f64; 3]>) {
         self.atms.get_or_init(|| {
             let mut atms = vec![];
@@ -69,11 +79,13 @@ impl DmoReader {
         })
     }
 
+    /// 读取原子轨道信息(带缓存)
     pub fn read_atos(&self) -> &Vec<(usize, usize, String, [f64; 3])> {
         self.dirs.get_or_init(|| {
             let mut atos = vec![];
             if self.marks.contains_key("atos") {
-                let s1 = Regex::new(r" *(\d+) *(\d+) *([A-Za-z\d]+) +(-?\d+.\d+) +(-?\d+.\d+) +(-?\d+.\d+)").expect("正则表达式生成失败");
+                let s1 = Regex::new(r" *(\d+) *(\d+) *([A-Za-z\d]+) +(-?\d+.\d+) +(-?\d+.\d+) +(-?\d+.\d+)")
+                    .expect("正则表达式生成失败");
                 for line in self.lines.iter().skip(self.marks["atos"] + 1) {
                     if s1.is_match(line) {
                         let caps = s1.captures(line).expect("捕获失败");
@@ -94,6 +106,7 @@ impl DmoReader {
         })
     }
 
+    /// 读取键连矩阵
     pub fn read_BM(&self) -> Array2<f64> {
         let atos = &self.read_atos();
         let nato = atos.len();
@@ -116,6 +129,7 @@ impl DmoReader {
         BM
     }
 
+    /// 读取轨道系数和能量
     pub fn read_coefs(&self) -> (Vec<f64>, Array2<f64>) {
         let atos = &self.read_atos();
         let nato = atos.len();
@@ -123,13 +137,21 @@ impl DmoReader {
         let mut CM = Array2::zeros((nato, nato));
         let mut obt_engs = vec![];
         for (ib, lb) in (start..self.lines.len()).step_by(nato + 2).enumerate() {
-            let engs: Vec<f64> = self.lines[lb + 1].trim().split_whitespace().map(|eng| eng.parse::<f64>().unwrap()).collect();
+            let engs: Vec<f64> = self.lines[lb + 1]
+                .trim()
+                .split_whitespace()
+                .map(|eng| eng.parse::<f64>().unwrap())
+                .collect();
             obt_engs.extend(engs);
             for ato in 0..nato {
                 let line = &self.lines[lb + 2 + ato];
                 // let atm = line[0..10].parse::<usize>().expect("转换失败");
                 // let sym = line[10..20].parse::<usize>().expect("转换失败");
-                let vals: Vec<f64> = line[10..].trim().split_whitespace().map(|val| val.parse::<f64>().unwrap()).collect();
+                let vals: Vec<f64> = line[10..]
+                    .trim()
+                    .split_whitespace()
+                    .map(|val| val.parse::<f64>().unwrap())
+                    .collect();
                 for (j, val) in vals.iter().enumerate() {
                     CM[(ato, ib * 10 + j)] = *val;
                 }

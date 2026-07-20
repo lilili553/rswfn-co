@@ -14,18 +14,25 @@ use std::f64::consts::PI;
 
 mod cint;
 
+/// 高斯型轨道(GTO)结构体
 pub struct Gto {
+    /// 角动量量子数 [l, m, n]
     lmn: [usize; 3],
+    /// 指数参数
     alp: f64,
+    /// 轨道中心坐标
     xyz: [f64; 3],
 }
 
 impl Gto {
+    /// 创建新的GTO
     pub fn new(lmn: [usize; 3], alp: f64, xyz: [f64; 3]) -> Self {
         Self { lmn, alp, xyz }
     }
 
-    // 高斯乘积定理
+    /// 高斯乘积定理
+    ///
+    /// 两个高斯型轨道的乘积仍为高斯型轨道,返回乘积系数和新的轨道。
     pub fn prod(&self, gto_j: &Gto) -> (f64, Gto) {
         let gto_i = self;
         let [xi, yi, zi] = gto_i.xyz;
@@ -108,12 +115,14 @@ impl IntVal1e {
         }
         if i > 0 {
             // 9.3.8
-            let sval = Xpa * self.sval_d(i - 1, j, d) + ((fi - 1.0) * self.sval_d(i - 2, j, d) + fj * self.sval_d(i - 1, j - 1, d)) / (2.0 * self.p);
+            let sval = Xpa * self.sval_d(i - 1, j, d)
+                + ((fi - 1.0) * self.sval_d(i - 2, j, d) + fj * self.sval_d(i - 1, j - 1, d)) / (2.0 * self.p);
             self.sval_d.insert(key, sval);
             return sval;
         } else {
             // 9.3.9
-            let sval = Xpb * self.sval_d(i, j - 1, d) + (fi * self.sval_d(i - 1, j - 1, d) + (fj - 1.0) * self.sval_d(i, j - 2, d)) / (2.0 * self.p);
+            let sval = Xpb * self.sval_d(i, j - 1, d)
+                + (fi * self.sval_d(i - 1, j - 1, d) + (fj - 1.0) * self.sval_d(i, j - 2, d)) / (2.0 * self.p);
             self.sval_d.insert(key, sval);
             return sval;
         }
@@ -149,7 +158,9 @@ impl IntVal1e {
             let tzn = self.tval_d(i, j - 1, d);
             let spz = self.sval_d(i + 1, j, d);
             let snz = self.sval_d(i - 1, j, d);
-            let val = Xpa * tzz + (i as f64 * tnz + j as f64 * tzn) / (2.0 * self.p) + (b / self.p) * (2.0 * a * spz - i as f64 * snz);
+            let val = Xpa * tzz
+                + (i as f64 * tnz + j as f64 * tzn) / (2.0 * self.p)
+                + (b / self.p) * (2.0 * a * spz - i as f64 * snz);
             self.tval_d.insert(key, val);
             return val;
         } else {
@@ -160,7 +171,9 @@ impl IntVal1e {
             let tzn = self.tval_d(i, j - 1, d);
             let szp = self.sval_d(i, j + 1, d);
             let szn = self.sval_d(i, j - 1, d);
-            let val = Xpb * tzz + (i as f64 * tnz + j as f64 * tzn) / (2.0 * self.p) + (a / self.p) * (2.0 * b * szp - j as f64 * szn);
+            let val = Xpb * tzz
+                + (i as f64 * tnz + j as f64 * tzn) / (2.0 * self.p)
+                + (a / self.p) * (2.0 * b * szp - j as f64 * szn);
             self.tval_d.insert(key, val);
             return val;
         }
@@ -228,7 +241,8 @@ impl IntVal1e {
         }
         if t > 0 {
             // 9.5.17
-            let val = (i as f64 * self.eval_d(i - 1, j, t - 1, d) + j as f64 * self.eval_d(i, j - 1, t - 1, d)) / (2.0 * self.p * t as f64);
+            let val = (i as f64 * self.eval_d(i - 1, j, t - 1, d) + j as f64 * self.eval_d(i, j - 1, t - 1, d))
+                / (2.0 * self.p * t as f64);
             self.eval_d.insert(key, val);
             return val;
         }
@@ -333,7 +347,18 @@ impl<'g> IntVal2e<'g> {
     pub fn new(Ga: &'g Gto, Gb: &'g Gto, Gc: &'g Gto, Gd: &'g Gto) -> Self {
         let (Kp, Gp) = Ga.prod(&Gb);
         let (Kq, Gq) = Gc.prod(&Gd);
-        Self { Ga, Gb, Gc, Gd, Gp, Gq, Kp, Kq, hval_d: HashMap::new(), eval_d: HashMap::new() }
+        Self {
+            Ga,
+            Gb,
+            Gc,
+            Gd,
+            Gp,
+            Gq,
+            Kp,
+            Kq,
+            hval_d: HashMap::new(),
+            eval_d: HashMap::new(),
+        }
     }
 
     // 公式 9.11.39
@@ -412,7 +437,8 @@ impl<'g> IntVal2e<'g> {
         }
         if t > 0 {
             // 9.5.17
-            let val = (i as f64 * self.eval_d(i - 1, j, t - 1, d, c) + j as f64 * self.eval_d(i, j - 1, t - 1, d, c)) / (2.0 * p * t as f64);
+            let val = (i as f64 * self.eval_d(i - 1, j, t - 1, d, c) + j as f64 * self.eval_d(i, j - 1, t - 1, d, c))
+                / (2.0 * p * t as f64);
             self.eval_d.insert(key, val);
             return val;
         }
@@ -470,14 +496,22 @@ impl<'g> IntVal2e<'g> {
     }
 }
 
+/// 双电子积分压缩存储结构体
+///
+/// 利用对称性将四维双电子积分矩阵压缩为一维存储。
 pub struct Mat2e {
+    /// 原子轨道数量
     pub nato: usize,
+    /// 有效积分数量
     pub nval: usize,
+    /// 标记位,记录积分是否已计算
     pub idxs: Vec<bool>,
+    /// 积分值列表
     pub vals: Vec<f64>,
 }
 
 impl Mat2e {
+    /// 创建新的Mat2e
     pub fn new(nato: usize) -> Self {
         let nval = nato * (nato + 1) * (nato * (nato + 1) + 2) / 8; // 有效电子积分数量
         let idxs = vec![false; nval];
@@ -485,16 +519,19 @@ impl Mat2e {
         Self { nato, nval, idxs, vals }
     }
 
+    /// 获取积分值
     pub fn get(&self, i: usize, j: usize, k: usize, l: usize) -> f64 {
         let idx = get_2eid(i, j, k, l);
         self.vals[idx]
     }
 
+    /// 设置积分值
     pub fn set(&mut self, i: usize, j: usize, k: usize, l: usize, val: f64) {
         let idx = get_2eid(i, j, k, l);
         self.vals[idx] = val;
     }
 
+    /// 检查是否所有积分都已计算完成
     pub fn check(&self) {
         for idx in self.idxs.iter() {
             if *idx == false {
@@ -502,6 +539,7 @@ impl Mat2e {
             }
         }
     }
+    /// 从四维数组构建Mat2e
     pub fn from_mat4(mat4: Array4<f64>) -> Self {
         let nato = mat4.shape()[0];
         let mut mat2e = Mat2e::new(nato);
@@ -517,6 +555,7 @@ impl Mat2e {
         mat2e
     }
 
+    /// 转为四维数组
     pub fn into_mat4(&self) -> Array4<f64> {
         let nato = self.nato;
         let mut mat4 = Array4::zeros((nato, nato, nato, nato));
@@ -533,37 +572,48 @@ impl Mat2e {
     }
 }
 
+/// Rust实现的分子积分计算器
+///
+/// 提供单电子积分(重叠、动能、核引)和双电子积分的计算功能,
+/// 以及球谐与笛卡尔基函数的转换。
 pub struct RsInt<'m> {
     basis: &'m Basis,
-    xyzs: &'m Vec<[f64; 3]>, // 每个原子的坐标
+    /// 每个原子的坐标
+    xyzs: &'m Vec<[f64; 3]>,
     crgs: &'m Vec<f64>,
 }
 
 impl<'m> RsInt<'m> {
+    /// 创建新的RsInt实例
     pub fn new(atoms: &'m Atoms, basis: &'m Basis) -> Self {
         let xyzs = atoms.xyzs();
         let crgs = atoms.crgs();
         Self { basis, xyzs, crgs }
     }
 
+    /// 计算重叠矩阵
     pub fn smat(&self, form: &str) -> Array2<f64> {
         self.mat1e([1, 0, 0], form)[0].clone()
     }
 
+    /// 计算动能矩阵
     pub fn tmat(&self, form: &str) -> Array2<f64> {
         self.mat1e([0, 1, 0], form)[1].clone()
     }
 
+    /// 计算核吸引势矩阵
     pub fn vmat(&self, form: &str) -> Array2<f64> {
         self.mat1e([0, 0, 1], form)[2].clone()
     }
 
+    /// 计算单电子积分(使用libcint)
     #[cfg(feature = "use-cint")]
     pub fn mat1e(&self, cals: [usize; 3], form: &str) -> [Array2<f64>; 3] {
         let cint = cint::Cint::new(self.basis, self.xyzs, self.crgs);
         cint.calc_int1e(form, cals)
     }
 
+    /// 计算单电子积分(Rust实现)
     #[cfg(not(feature = "use-cint"))]
     pub fn mat1e(&self, cals: [usize; 3], form: &str) -> [Array2<f64>; 3] {
         let atos = &self.basis.atos().cars;
@@ -631,6 +681,7 @@ impl<'m> RsInt<'m> {
         [smat, tmat, vmat]
     }
 
+    /// 计算双电子积分(使用libcint)
     #[cfg(feature = "use-cint")]
     pub fn mat2e(&self, form: &str) -> Mat2e {
         println!("使用libcint");
@@ -638,7 +689,7 @@ impl<'m> RsInt<'m> {
         let mat4 = cint.calc_int2e(form);
         return Mat2e::from_mat4(mat4);
     }
-    // 双电子库伦积分
+    /// 计算双电子库伦积分(Rust实现)
     #[cfg(not(feature = "use-cint"))]
     pub fn mat2e(&self, form: &str) -> Mat2e {
         let atos = &self.basis.atos().cars;
@@ -697,6 +748,7 @@ impl<'m> RsInt<'m> {
         emat
     }
 
+    /// 将笛卡尔单电子积分转换为球谐形式
     pub fn mat1e_sph(&self, car_mat: &Array2<f64>) -> Array2<f64> {
         let shls = &self.basis.shls;
         let nshl = shls.len();
@@ -724,7 +776,7 @@ impl<'m> RsInt<'m> {
         sph_mat
     }
 
-    // 将笛卡尔重叠矩阵转为原始重叠矩阵
+    /// 将笛卡尔单电子积分转换为原始(非收缩)形式
     pub fn mat1e_raw(&self, car_mat: &Array2<f64>) -> Array2<f64> {
         let shls = &self.basis.shls;
         let nshl = shls.len();
@@ -753,13 +805,15 @@ impl<'m> RsInt<'m> {
                 if n_car_j != n_raw_j {
                     raw_part = raw_part.dot(&tmatj)
                 }
-                smat_raw.slice_mut(s![up_raw_i..lo_raw_i, up_raw_j..lo_raw_j]).assign(&raw_part);
+                smat_raw
+                    .slice_mut(s![up_raw_i..lo_raw_i, up_raw_j..lo_raw_j])
+                    .assign(&raw_part);
             }
         }
         smat_raw
     }
 
-    // 获取局部坐标系的单电子积分
+    /// 获取局部坐标系的单电子积分
     pub fn mat1e_lcs(&self, stms: &HashMap<usize, Stm>, cals: [usize; 3]) -> [Array2<f64>; 3] {
         let shls = &self.basis.shls;
         let uplo = shls.uplo("car");
@@ -845,7 +899,11 @@ impl<'m> RsInt<'m> {
                                             for (b, ab) in (uj..lj).enumerate() {
                                                 for (c, ac) in (uk..lk).enumerate() {
                                                     for (d, ad) in (ul..ll).enumerate() {
-                                                        sum += Ti[(i, a)] * Tj[(j, b)] * Tk[(k, c)] * Tl[(l, d)] * gemat.get(aa, ab, ac, ad);
+                                                        sum += Ti[(i, a)]
+                                                            * Tj[(j, b)]
+                                                            * Tk[(k, c)]
+                                                            * Tl[(l, d)]
+                                                            * gemat.get(aa, ab, ac, ad);
                                                     }
                                                 }
                                             }
@@ -863,9 +921,23 @@ impl<'m> RsInt<'m> {
     }
 }
 
-// 将双电子积分的四维索引压缩成一维索引
+/// 将双电子积分的四维索引压缩为一维索引
+///
+/// 利用(ij|kl)积分的对称性,将(i,j,k,l)四维索引映射到一维数组。
 pub fn get_2eid(i: usize, j: usize, k: usize, l: usize) -> usize {
-    let p = if i >= j { i * (i + 1) / 2 + j } else { j * (j + 1) / 2 + i };
-    let q = if k >= l { k * (k + 1) / 2 + l } else { l * (l + 1) / 2 + k };
-    if p >= q { p * (p + 1) / 2 + q } else { q * (q + 1) / 2 + p }
+    let p = if i >= j {
+        i * (i + 1) / 2 + j
+    } else {
+        j * (j + 1) / 2 + i
+    };
+    let q = if k >= l {
+        k * (k + 1) / 2 + l
+    } else {
+        l * (l + 1) / 2 + k
+    };
+    if p >= q {
+        p * (p + 1) / 2 + q
+    } else {
+        q * (q + 1) / 2 + p
+    }
 }

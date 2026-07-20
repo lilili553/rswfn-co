@@ -31,6 +31,13 @@ pub struct Coef {
 }
 
 impl Coef {
+    /// 创建一个新的系数对象
+    ///
+    /// # Parameters
+    /// - `atms`: 每个原子轨道对应的原子索引列表
+    /// - `shls`: 每个原子轨道对应的壳层索引列表
+    /// - `syms`: 每个原子轨道对应的符号列表
+    /// - `cmat`: 系数矩阵（原子轨道 × 分子轨道）
     pub fn new(atms: &Vec<usize>, shls: &Vec<usize>, syms: &Vec<String>, cmat: &Array2<f64>) -> Self {
         Self {
             atms: atms.clone(),
@@ -42,6 +49,7 @@ impl Coef {
         }
     }
 
+    /// 按原子分组返回每个原子的起止索引范围（惰性初始化）
     pub fn uplo(&self) -> &Vec<[usize; 2]> {
         self._uplo.get_or_init(|| {
             let mut uplo = vec![[0, 0]];
@@ -61,6 +69,13 @@ impl Coef {
         })
     }
 
+    /// 重新构建系数数据
+    ///
+    /// # Parameters
+    /// - `atms`: 原子索引列表
+    /// - `shls`: 壳层索引列表
+    /// - `syms`: 轨道符号列表
+    /// - `cmat`: 系数矩阵
     pub fn build(&mut self, atms: Vec<usize>, shls: Vec<usize>, syms: Vec<String>, cmat: Array2<f64>) {
         self.atms = atms;
         self.shls = shls;
@@ -94,6 +109,17 @@ pub struct Coefs {
 
 #[rustfmt::skip]
 impl Coefs {
+    /// 创建新的分子轨道系数集合
+    ///
+    /// 自动将原始系数存储为 raw 形式
+    ///
+    /// # Parameters
+    /// - `ato_atms`: 每个原子轨道对应的原子索引
+    /// - `ato_shls`: 每个原子轨道对应的壳层索引
+    /// - `ato_syms`: 每个原子轨道对应的符号
+    /// - `obt_engs`: 分子轨道能量列表
+    /// - `obt_occs`: 分子轨道占据数列表
+    /// - `cmat`: 系数矩阵
     pub fn new(
         ato_atms: Vec<usize>,
         ato_shls: Vec<usize>,
@@ -114,6 +140,15 @@ impl Coefs {
         }
     }
 
+    /// 通过引用创建新的分子轨道系数集合
+    ///
+    /// # Parameters
+    /// - `ato_atms`: 每个原子轨道对应的原子索引
+    /// - `ato_shls`: 每个原子轨道对应的壳层索引
+    /// - `ato_syms`: 每个原子轨道对应的符号
+    /// - `obt_engs`: 分子轨道能量列表
+    /// - `obt_occs`: 分子轨道占据数列表
+    /// - `cmat`: 系数矩阵
     pub fn new_ref(
         ato_atms: &Vec<usize>,
         ato_shls: &Vec<usize>,
@@ -132,10 +167,15 @@ impl Coefs {
         }
     }
 
+    /// 返回原始形式的系数
     pub fn coef_raw(&self) -> &Coef {
         &self._coef_raw
     }
 
+    /// 返回球谐形式的系数（惰性初始化）
+    ///
+    /// # Parameters
+    /// - `basis`: 基组信息，用于形式转换
     pub fn coef_sph(&self, basis: &Basis) -> &Coef {
         self._coef_sph.get_or_init(|| {
             let (cmat,atms,shls,syms)=from_raw(&self._coef_raw.cmat, basis, "sph");
@@ -143,6 +183,10 @@ impl Coefs {
         })
     }
 
+    /// 返回笛卡尔形式的系数（惰性初始化）
+    ///
+    /// # Parameters
+    /// - `basis`: 基组信息，用于形式转换
     pub fn coef_car(&self, basis: &Basis) -> &Coef {
         self._coef_car.get_or_init(|| {
             let (cmat,atms,shls,syms)=from_raw(&self._coef_raw.cmat, basis, "car");
@@ -150,6 +194,7 @@ impl Coefs {
         })
     }
 
+    /// 判断系数集合是否为空
     pub fn is_none(&self) -> bool {
         let coef=&self._coef_raw;
         coef.atms.is_empty() ||
@@ -160,6 +205,11 @@ impl Coefs {
         self.obt_occs.is_empty()
     }
 
+    /// 获取指定形式的系数矩阵
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
+    /// - `basis`: 基组信息
     pub fn get_cmat(&self,form:&str,basis: &Basis)->&Array2<f64>{
         match form{
             "raw"=>&self.coef_raw().cmat,
@@ -169,6 +219,14 @@ impl Coefs {
         }
     }
 
+    /// 设置指定形式的系数矩阵
+    ///
+    /// 内部将数据转换为原始（raw）形式存储，并清除缓存的转换结果
+    ///
+    /// # Parameters
+    /// - `form`: 输入的系数矩阵形式（"raw", "sph", "car"）
+    /// - `cmat`: 系数矩阵
+    /// - `basis`: 基组信息，用于形式转换
     pub fn set_cmat(&mut self,form:&str,cmat:&Array2<f64>,basis: &Basis){
         self._coef_car.take();
         self._coef_sph.take();
@@ -208,7 +266,13 @@ impl Coefs {
         }
     }
 
-    // 获取α和β电子数
+    /// 获取α和β电子数
+    ///
+    /// # Parameters
+    /// - `basis`: 基组信息
+    ///
+    /// # Returns
+    /// 长度为2的数组，[α电子数, β电子数]
     pub fn obt_eles(&self,basis: &Basis)->[usize;2]{
         let cmat=self.get_cmat("sph",basis);
         let nato=cmat.nrows(); // 原子轨道数
@@ -237,6 +301,13 @@ impl Coefs {
         eles
     }
 
+    /// 获取指定形式的密度矩阵（惰性初始化）
+    ///
+    /// 密度矩阵 D = C * n * C^T，其中 n 为占据数对角矩阵
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
+    /// - `basis`: 基组信息
     pub fn get_dmat(&self,form:&str,basis: &Basis)->&Array2<f64>{
         // let mole=self.mole();
         let cmat=self.get_cmat(form,basis);
@@ -266,17 +337,28 @@ impl Coefs {
         dmat
     }
 
-    pub fn atm_uplo(&self,form:&str,basis: &Basis)->&Vec<[usize;2]>{
-        match form{
-            "raw"=>self.coef_raw().uplo(),
-            "sph"=>self.coef_sph(basis).uplo(),
-            "car"=>self.coef_car(basis).uplo(),
-            _=>{
-                panic!("Invalid form for get_dmat");
-            }
-        }
-    }
+    /// 返回按原子分组的起止索引范围
+    ///
+    /// # Parameters
+    /// - `form`: 轨道形式（"raw", "sph", "car"）
+    /// - `basis`: 基组信息
+    // pub fn atm_uplo(&self,form:&str,basis: &Basis)->&Vec<[usize;2]>{
+    //     match form{
+    //         "raw"=>self.coef_raw().uplo(),
+    //         "sph"=>self.coef_sph(basis).uplo(),
+    //         "car"=>self.coef_car(basis).uplo(),
+    //         _=>{
+    //             panic!("Invalid form for get_dmat");
+    //         }
+    //     }
+    // }
 
+    /// 判断两个系数集合是否相等
+    ///
+    /// 比较轨道能量、占据数、原子索引、壳层索引、轨道符号和系数矩阵
+    ///
+    /// # Parameters
+    /// - `other`: 另一个 Coefs 结构
     pub fn equal(&self, other: &Coefs)->bool{
         if all_like(&self.obt_engs,&other.obt_engs)==false{
             log::info!("obt_engs不等");
@@ -379,6 +461,15 @@ impl fmt::Display for Coefs {
     }
 }
 
+/// 将原始形式的系数矩阵转换为指定形式（sph/car）
+///
+/// # Parameters
+/// - `cmat_raw`: 原始形式的系数矩阵
+/// - `basis`: 基组信息
+/// - `form`: 目标轨道形式（"sph" 或 "car"）
+///
+/// # Returns
+/// 元组 (转换后的系数矩阵, 原子索引列表, 壳层索引列表, 轨道符号列表)
 pub fn from_raw(
     cmat_raw: &Array2<f64>,
     basis: &Basis,
@@ -421,6 +512,15 @@ pub fn from_raw(
     (cmat_stp, atms_stp, shls_stp, syms_stp)
 }
 
+/// 将指定形式（sph/car）的系数矩阵转换回原始形式
+///
+/// # Parameters
+/// - `cmat_stp`: 指定形式的系数矩阵
+/// - `basis`: 基组信息
+/// - `form`: 当前轨道形式（"sph" 或 "car"）
+///
+/// # Returns
+/// 元组 (转换后的原始系数矩阵, 原子索引列表, 壳层索引列表, 轨道符号列表)
 pub fn into_raw(
     cmat_stp: &Array2<f64>,
     basis: &Basis,

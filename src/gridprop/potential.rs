@@ -6,12 +6,14 @@ use crate::base::Mole;
 use crate::gridprop::{density, dftgrid};
 use crate::maths::calc_dist;
 
+/// 势能计算器，计算核势能和电子势能
 pub struct Calculator<'m> {
     pub mole: &'m Mole,
     pub rhos: OnceLock<(Vec<[f64; 3]>, Vec<f64>, Vec<f64>)>,
 }
 
 impl<'m> Calculator<'m> {
+    /// 创建一个新的 Calculator 实例
     pub fn new(mole: &'m Mole) -> Self {
         Calculator {
             mole,
@@ -19,6 +21,7 @@ impl<'m> Calculator<'m> {
         }
     }
 
+    /// 计算指定点处的核势能
     pub fn nuc_potential(
         &self,
         grid: &[f64; 3], // 请求点（要计算的点）的坐标
@@ -38,6 +41,7 @@ impl<'m> Calculator<'m> {
         val
     }
 
+    /// 计算指定点处的电子势能
     pub fn ele_potential(
         &self,
         grid: &[f64; 3], // query position 请求点（要计算的点）的坐标

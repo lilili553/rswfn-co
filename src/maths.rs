@@ -1,6 +1,7 @@
 use crate::maths;
 use crate::{base::Vec3, utils};
 use ndarray::{Array1, Array2, Axis};
+use std::backtrace::Backtrace;
 use std::f64::consts::PI;
 
 /// 计算(重叠)矩阵的平方根 S^{1/2}
@@ -17,7 +18,7 @@ pub fn matrix_phalf(smat: &Array2<f64>) -> Array2<f64> {
     vec_mat.dot(&val_mat).dot(&vec_mat.t())
 }
 
-// S^{-1/2}
+/// 计算(重叠)矩阵的负平方根 S^{-1/2}
 pub fn matrix_nhalf(smat: &Array2<f64>) -> Array2<f64> {
     let (eig_val, vec_mat) = maths::eigh(smat);
     let nmat = smat.shape()[0];
@@ -54,13 +55,14 @@ pub fn calc_dmat(cmat: &Array2<f64>, obt_occs: &Vec<f64>) -> Array2<f64> {
     dmat
 }
 
+/// 计算三维空间中两点之间的距离
 pub fn calc_dist(p1: &[f64; 3], p2: &[f64; 3]) -> f64 {
     let [x1, y1, z1] = p1;
     let [x2, y2, z2] = p2;
     f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2) + (z2 - z1).powi(2))
 }
 
-// 拉格朗日插值
+/// 拉格朗日插值，根据已知数据点计算目标点的函数值
 pub fn lag_intpol(xs: &Vec<f64>, ys: &Vec<f64>, tv: f64) -> f64 {
     let nx = xs.len();
     // let mut loc;
@@ -94,28 +96,19 @@ pub fn lag_intpol(xs: &Vec<f64>, ys: &Vec<f64>, tv: f64) -> f64 {
     }
 }
 
-// 将向量v1投影到v2上，v2必须是单位向量
-pub fn vec_project(vec1: [f64; 3], vec2: [f64; 3]) -> [f64; 3] {
+/// 将向量v1投影到v2上，v2必须是单位向量
+pub fn vec_project(vec1: [f64; 3], vec2: [f64; 3]) -> Result<[f64; 3], String> {
     let [x1, y1, z1] = vec1;
     let [x2, y2, z2] = vec2;
     let len2 = vec_len(&vec2);
-    assert!((len2 - 1.0).abs() < 1e-5, "v2 不是单位向量{:?},{}", vec2, vec2.len());
+    if (len2 - 1.0).abs() > 1e-5 {
+        let msg = format!("v2 不是单位向量{:?},{}", vec2, len2);
+        log::error!("{}", msg);
+        return Err(msg);
+    }
     let dot = x1 * x2 + y1 * y2 + z1 * z2;
-    [dot * x2, dot * y2, dot * z2]
+    Ok([dot * x2, dot * y2, dot * z2])
 }
-
-// 计算两个向量之间的夹角
-// pub fn vec_angle(vec1: &[f64; 3], vec2: &[f64; 3]) -> f64 {
-//     let [x1, y1, z1] = vec1;
-//     let [x2, y2, z2] = vec2;
-
-//     let len1 = f64::sqrt(x1.powi(2) + y1.powi(2) + z1.powi(2));
-//     let len2 = f64::sqrt(x2.powi(2) + y2.powi(2) + z2.powi(2));
-
-//     let dot = x1 * x2 + y1 * y2 + z1 * z2;
-//     let cos = dot / (len1 * len2);
-//     cos.acos() / PI
-// }
 
 /// 向量的归一化
 pub fn vec_norm(vec: &[f64; 3]) -> [f64; 3] {
@@ -158,7 +151,7 @@ pub fn vec_psd(nums: &Vec<f64>) -> f64 {
     (sum / nums.len() as f64).sqrt()
 }
 
-// 通过三个点确定一个平面
+/// 通过三个不共线的点确定一个平面，返回平面方程 Ax+By+Cz+D=0 的系数
 pub fn get_plan_by_3points(p1: &Vec3, p2: &Vec3, p3: &Vec3) -> [f64; 4] {
     let v21 = p1 - p2;
     let v23 = p3 - p2;
@@ -168,11 +161,14 @@ pub fn get_plan_by_3points(p1: &Vec3, p2: &Vec3, p3: &Vec3) -> [f64; 4] {
     [a, b, c, d]
 }
 
+/// 返回 a 的绝对值乘以 b 的符号
 pub fn sign(a: f64, b: f64) -> f64 {
     if b > 0.0 { a.abs() } else { a.abs() * (-1.0) }
 }
 
-// 根据能量和温度计算玻尔兹曼分布
+/// 根据能量和温度计算玻尔兹曼分布概率
+/// - ens: 各能级的能量
+/// - t: 温度（开尔文）
 pub fn bolzman_dist(ens: &Vec<f64>, t: f64) -> Vec<f64> {
     let k = 1.380649e-23; // 玻尔兹曼常数
     let mut ps = vec![0.0; ens.len()];
@@ -212,7 +208,7 @@ pub fn arg_min(vals: &Vec<f64>) -> (usize, f64) {
     (idx, min)
 }
 
-// 计算阶乘
+/// 计算整数的阶乘 n!
 pub fn fac(n: isize) -> isize {
     if n == 0 {
         return 1;
@@ -220,7 +216,7 @@ pub fn fac(n: isize) -> isize {
     return n * fac(n - 1);
 }
 
-// 计算双阶乘
+/// 计算整数的双阶乘 n!!
 pub fn fac2(n: isize) -> isize {
     if n % 2 == 0 {
         // 偶数情况
@@ -233,12 +229,16 @@ pub fn fac2(n: isize) -> isize {
     }
 }
 
+/// 对实对称矩阵进行特征值分解，返回特征值和特征向量
+/// 使用 ndarray-linalg 后端
 #[cfg(feature = "use-lina")]
 pub fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
     use ndarray_linalg::{Eigh, UPLO};
     mat.eigh(UPLO::Lower).expect("矩阵对角化失败")
 }
 
+/// 对实对称矩阵进行特征值分解，返回特征值和特征向量
+/// 使用 faer 后端
 #[cfg(feature = "use-faer")]
 pub fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
     use faer::Side;
@@ -259,12 +259,16 @@ pub fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
     (eig_val, eig_vec)
 }
 
+/// 计算方阵的逆矩阵
+/// 使用 ndarray-linalg 后端
 #[cfg(feature = "use-lina")]
 pub fn inv(mat: &Array2<f64>) -> Array2<f64> {
     use ndarray_linalg::Inverse;
     mat.inv().expect("矩阵求逆失败")
 }
 
+/// 计算方阵的逆矩阵
+/// 使用 faer 后端
 #[cfg(feature = "use-faer")]
 pub fn inv(mat: &Array2<f64>) -> Array2<f64> {
     use faer::linalg::solvers::DenseSolveCore;
@@ -274,12 +278,16 @@ pub fn inv(mat: &Array2<f64>) -> Array2<f64> {
     from_faer(&mat)
 }
 
+/// 计算方阵的行列式
+/// 使用 ndarray-linalg 后端
 #[cfg(feature = "use-lina")]
 pub fn det(mat: &Array2<f64>) -> f64 {
     use ndarray_linalg::Determinant;
     mat.det().expect("矩阵求行列式失败")
 }
 
+/// 计算方阵的行列式
+/// 使用 faer 后端
 #[cfg(feature = "use-faer")]
 pub fn det(mat: &Array2<f64>) -> f64 {
     let mat = into_faer(mat);
@@ -287,6 +295,7 @@ pub fn det(mat: &Array2<f64>) -> f64 {
 }
 
 #[cfg(feature = "use-faer")]
+/// 将 ndarray 矩阵转换为 faer 矩阵
 fn into_faer(mat: &Array2<f64>) -> faer::Mat<f64> {
     use faer::Mat;
     let nrow = mat.nrows();
@@ -301,6 +310,7 @@ fn into_faer(mat: &Array2<f64>) -> faer::Mat<f64> {
 }
 
 #[cfg(feature = "use-faer")]
+/// 将 faer 矩阵转换为 ndarray 矩阵
 fn from_faer(mat: &faer::Mat<f64>) -> Array2<f64> {
     let nrow = mat.nrows();
     let ncol = mat.ncols();

@@ -22,11 +22,21 @@ pub struct Mole {
 }
 
 impl Mole {
+    /// 创建新的分子结构
+    ///
+    /// # Parameters
+    /// - `atoms`: 原子结构
+    /// - `basis`: 基组（可选）
+    /// - `coefs`: 分子轨道系数（可选）
     pub fn new(atoms: Atoms, basis: Option<Basis>, coefs: Option<Coefs>) -> Mole {
         let mut mole = Self { atoms, basis, coefs };
         mole
     }
 
+    /// 从读取器读取分子信息
+    ///
+    /// # Parameters
+    /// - `reader`: 实现了 Reader trait 的文件读取器
     pub fn from_read(reader: &dyn Reader) -> Mole {
         let atoms = reader.get_atoms();
         let basis = reader.get_basis();
@@ -35,6 +45,13 @@ impl Mole {
         mole
     }
 
+    /// 从文件路径读取分子信息
+    ///
+    /// 自动根据文件扩展名选择合适的读取器
+    /// 支持格式：gjf, log, fch, mol, sdf, xyz, mde, dmo, inp, cub
+    ///
+    /// # Parameters
+    /// - `path`: 文件路径
     pub fn from_file(path: &str) -> Mole {
         let file_type = get_fileType(path);
         match file_type {
@@ -51,10 +68,12 @@ impl Mole {
         }
     }
 
+    /// 返回分子中的原子结构
     pub fn atoms(&self) -> &Atoms {
         &self.atoms
     }
 
+    /// 返回分子中的基组（如果存在），否则 panic
     pub fn basis(&self) -> &Basis {
         match &self.basis {
             Some(basis) => basis,
@@ -62,6 +81,7 @@ impl Mole {
         }
     }
 
+    /// 返回分子中的轨道系数（如果存在），否则 panic
     pub fn coefs(&self) -> &Coefs {
         match &self.coefs {
             Some(coefs) => coefs,
@@ -69,10 +89,12 @@ impl Mole {
         }
     }
 
+    /// 判断分子是否为开壳层（多重度不为 1）
     pub fn is_open(&self) -> bool {
         self.multip() != 1
     }
 
+    /// 返回分子的化学式（如 "C2H6O"）
     pub fn formula(&self) -> String {
         let mut formula = String::new();
         let syms = self.atoms().syms();
@@ -85,7 +107,7 @@ impl Mole {
         formula
     }
 
-    // 分子总核电荷数
+    /// 返回分子总核电荷数
     pub fn ncrg(&self) -> usize {
         let mut ncrg = 0.0;
         let crgs = self.atoms().crgs();
@@ -95,17 +117,27 @@ impl Mole {
         ncrg as usize
     }
 
+    /// 返回分子总电荷
+    ///
+    /// 电荷 = 总核电荷数 - 总电子数
     pub fn charge(&self) -> isize {
         let [nela, nelb] = self.atoms.neles;
         let ncrg = self.ncrg();
         ncrg as isize - nela as isize - nelb as isize
     }
 
+    /// 返回分子多重度（自旋多重度）
+    ///
+    /// 多重度 = α电子数 - β电子数 + 1
     pub fn multip(&self) -> usize {
         let [nela, nelb] = self.atoms.neles;
         nela - nelb + 1
     }
 
+    /// 计算格点到分子的最短距离
+    ///
+    /// # Parameters
+    /// - `grid`: 三维格点坐标 [x, y, z]
     pub fn dist(&self, grid: &[f64; 3]) -> f64 {
         // 格点到分子的距离
         let [gx, gy, gz] = *grid;
@@ -121,6 +153,9 @@ impl Mole {
         min_dist
     }
 
+    /// 查找分子中的所有环（最小环集合，SSSR）
+    ///
+    /// 过滤掉环内存在多余键的非最小环，仅保留原子数等于键数的环
     pub fn rings(&self) -> Vec<Vec<usize>> {
         let atoms = self.atoms();
         let natm = atoms.len();
@@ -153,6 +188,12 @@ impl Mole {
         rings
     }
 
+    /// 判断两个分子是否完全相等
+    ///
+    /// 比较原子结构、基组信息和轨道系数
+    ///
+    /// # Parameters
+    /// - `other`: 另一个 Mole 结构
     pub fn equal(&self, other: &Mole) -> bool {
         if self.atoms().equal(&other.atoms()) == false {
             log::info!("分子结构不相等");
@@ -169,7 +210,11 @@ impl Mole {
         return true;
     }
 
-    pub fn border(&self) -> [[f64; 3]; 2] {
+    /// 返回分子的空间边界
+    ///
+    /// # Returns
+    /// 包含两个点的数组，[最小坐标, 最大坐标]，每个点为 [x, y, z]
+    pub fn border(&self, bord: f64) -> [[f64; 3]; 2] {
         let xyzs = self.atoms().xyzs();
         let xs: Vec<f64> = xyzs.iter().map(|xyz| xyz[0]).collect();
         let ys: Vec<f64> = xyzs.iter().map(|xyz| xyz[1]).collect();
@@ -180,9 +225,21 @@ impl Mole {
         let maxx = maths::arg_max(&xs).1;
         let maxy = maths::arg_max(&ys).1;
         let maxz = maths::arg_max(&zs).1;
-        let p0 = [minx, miny, minz];
-        let p1 = [maxx, maxy, maxz];
+        let p0 = [minx - bord, miny - bord, minz - bord];
+        let p1 = [maxx + bord, maxy + bord, maxz + bord];
         [p0, p1]
+    }
+
+    /// 判断分子中所有原子是否为线性结构
+    pub fn is_line(&self) -> bool {
+        let mut is_line = true;
+        let natm = self.atoms.len();
+        for i in 0..natm {
+            if !self.atoms.is_line(i) {
+                is_line = false;
+            }
+        }
+        is_line
     }
 }
 
@@ -192,39 +249,49 @@ impl fmt::Display for Mole {
         let multip = self.multip();
         writeln!(f, "{:>3}{:>3}", charge, multip)?;
         write!(f, "{}", self.atoms())?;
-        write!(f, "{}", self.basis())?;
-        let atos = &self.basis().atos().raws;
-        // for (i, ato) in atos.iter().enumerate() {
-        //     write!(f, "{:>3}{:>3}{:>3}{:>5}\n", i, ato.atm, ato.shl, ato.sym)?;
-        // }
-        let coefs = format!("{}", self.coefs());
-        let nato = atos.len();
-        for (l, line) in coefs.split("\n").enumerate() {
-            let idx = l % (nato + 2);
-            let ato_str = if idx >= 2 {
-                let atm = atos[idx - 2].atm;
-                let elm = &self.atoms.get(atm).sym;
-                let shl = atos[idx - 2].shl;
-                let sym = &atos[idx - 2].sym;
-                let loc = atos[idx - 2].loc;
-                format!(
-                    "{:>3}{:>3}{:>2}{:>3}{:>5}{:>3}",
-                    idx - 1,
-                    atm + 1,
-                    elm,
-                    shl + 1,
-                    sym,
-                    loc,
-                )
-            } else {
-                format!("                   ")
-            };
-            writeln!(f, "{}{}", ato_str, line)?;
+        if let Some(basis) = &self.basis {
+            write!(f, "{}", basis)?;
+        }
+        if let Some(coefs) = &self.coefs {
+            let atos = &self.basis().atos().raws;
+            let coefs = format!("{}", self.coefs());
+            let nato = atos.len();
+            for (l, line) in coefs.split("\n").enumerate() {
+                let idx = l % (nato + 2);
+                let ato_str = if idx >= 2 {
+                    let atm = atos[idx - 2].atm;
+                    let elm = &self.atoms.get(atm).sym;
+                    let shl = atos[idx - 2].shl;
+                    let sym = &atos[idx - 2].sym;
+                    let loc = atos[idx - 2].loc;
+                    format!(
+                        "{:>3}{:>3}{:>2}{:>3}{:>5}{:>3}",
+                        idx - 1,
+                        atm + 1,
+                        elm,
+                        shl + 1,
+                        sym,
+                        loc,
+                    )
+                } else {
+                    format!("                   ")
+                };
+                writeln!(f, "{}{}", ato_str, line)?;
+            }
         }
         Ok(())
     }
 }
 
+/// 查找图中的最小环集合（SSSR）
+///
+/// 使用深度优先搜索（DFS）遍历所有环，并去重
+///
+/// # Parameters
+/// - `adjacency_list`: 邻接表表示的图
+///
+/// # Returns
+/// 所有环的列表，每个环由原子索引列表表示
 pub fn find_sssr(adjacency_list: &HashMap<usize, Vec<usize>>) -> Vec<Vec<usize>> {
     let n = adjacency_list.len();
     let mut rings: Vec<Vec<usize>> = Vec::new();

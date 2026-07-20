@@ -16,12 +16,15 @@ Sum of electronic and thermal Energies       {E5}
 Sum of electronic and thermal Enthalpies     {E6}
 Sum of electronic and thermal Free Energies  {E7}"#;
 
+/// 化学信息提取工具
 pub struct Tool {}
 
 impl Tool {
+    /// 创建新的Tool实例
     pub fn new() -> Self {
         Self {}
     }
+    /// 提取支持信息的字符串
     pub fn get_SI(&self, paths: &Vec<String>) -> String {
         // 提取支持信息
 
@@ -69,7 +72,13 @@ impl Tool {
                 let atm = atms[i];
                 let xyz = xyzs[i];
                 let sym = elems::atm2sym(atm);
-                geomeStr += &format!("{:<12}{:>16.8}{:>16.8}{:>16.8}\n", sym, xyz[0] / BOHR, xyz[1] / BOHR, xyz[2] / BOHR);
+                geomeStr += &format!(
+                    "{:<12}{:>16.8}{:>16.8}{:>16.8}\n",
+                    sym,
+                    xyz[0] / BOHR,
+                    xyz[1] / BOHR,
+                    xyz[2] / BOHR
+                );
             }
             geomeStr = geomeStr.trim_end_matches("\n").to_string();
             temp = temp.replace("{geome}", &geomeStr);
