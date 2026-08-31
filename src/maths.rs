@@ -230,19 +230,9 @@ pub fn fac2(n: isize) -> isize {
 }
 
 /// 对实对称矩阵进行特征值分解，返回特征值和特征向量
-/// 使用 ndarray-linalg 后端
-#[cfg(feature = "use-lina")]
-pub fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
-    use ndarray_linalg::{Eigh, UPLO};
-    mat.eigh(UPLO::Lower).expect("矩阵对角化失败")
-}
-
-/// 对实对称矩阵进行特征值分解，返回特征值和特征向量
 /// 使用 faer 后端
-#[cfg(feature = "use-faer")]
 pub fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
     use faer::Side;
-    use faer::linalg::solvers::FullPivLu;
     let mat = into_faer(mat);
     let eigen = mat.self_adjoint_eigen(Side::Lower).unwrap();
     let S = eigen.S();
@@ -260,16 +250,7 @@ pub fn eigh(mat: &Array2<f64>) -> (Array1<f64>, Array2<f64>) {
 }
 
 /// 计算方阵的逆矩阵
-/// 使用 ndarray-linalg 后端
-#[cfg(feature = "use-lina")]
-pub fn inv(mat: &Array2<f64>) -> Array2<f64> {
-    use ndarray_linalg::Inverse;
-    mat.inv().expect("矩阵求逆失败")
-}
-
-/// 计算方阵的逆矩阵
 /// 使用 faer 后端
-#[cfg(feature = "use-faer")]
 pub fn inv(mat: &Array2<f64>) -> Array2<f64> {
     use faer::linalg::solvers::DenseSolveCore;
     let mat = into_faer(mat);
@@ -279,37 +260,25 @@ pub fn inv(mat: &Array2<f64>) -> Array2<f64> {
 }
 
 /// 计算方阵的行列式
-/// 使用 ndarray-linalg 后端
-#[cfg(feature = "use-lina")]
-pub fn det(mat: &Array2<f64>) -> f64 {
-    use ndarray_linalg::Determinant;
-    mat.det().expect("矩阵求行列式失败")
-}
-
-/// 计算方阵的行列式
 /// 使用 faer 后端
-#[cfg(feature = "use-faer")]
 pub fn det(mat: &Array2<f64>) -> f64 {
     let mat = into_faer(mat);
     mat.determinant()
 }
 
-#[cfg(feature = "use-faer")]
 /// 将 ndarray 矩阵转换为 faer 矩阵
-fn into_faer(mat: &Array2<f64>) -> faer::Mat<f64> {
-    use faer::Mat;
-    let nrow = mat.nrows();
-    let ncol = mat.ncols();
-    let mut mat = Mat::zeros(nrow, ncol);
+fn into_faer(src: &Array2<f64>) -> faer::Mat<f64> {
+    let nrow = src.nrows();
+    let ncol = src.ncols();
+    let mut out = faer::Mat::zeros(nrow, ncol);
     for i in 0..nrow {
         for j in 0..ncol {
-            mat[(i, j)] = mat[(i, j)];
+            out[(i, j)] = src[(i, j)];
         }
     }
-    mat
+    out
 }
 
-#[cfg(feature = "use-faer")]
 /// 将 faer 矩阵转换为 ndarray 矩阵
 fn from_faer(mat: &faer::Mat<f64>) -> Array2<f64> {
     let nrow = mat.nrows();

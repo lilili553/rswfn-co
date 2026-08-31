@@ -4,7 +4,6 @@ use std::f64::consts::PI;
 use log::Level;
 use ndarray::{Array2, s};
 use ndarray::{Axis, Shape};
-use ndarray_linalg::Inverse;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::*;

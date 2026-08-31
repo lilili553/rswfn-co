@@ -12,8 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ndarray = "0.16"
-ndarray-linalg = { version = "0.17.0", optional = true }
-faer = { version = "0.24.0", optional = true }
+faer = "0.24.0"
 regex = "1.11.1"                                         # 正则表达式库
 rayon = "1.5.1"                                          # 并行计算库
 mem_dbg = "0.3.0"
@@ -39,10 +38,6 @@ panic = "abort"   # Higher performance by disabling panic handlers.
 debug = true      # 进行性能测试的时候需要打开
 
 [features]
-default = ["use-imkl", "use-lina"] # 默认使用intel-mkl
+default = []
 use-cint = []                                 # 使用libcint
 use-func = []                                 # 使用泛函库
-use-faer = ["faer"]
-use-lina = ["ndarray-linalg"]
-use-blas = ["ndarray-linalg/openblas-system"]
-use-imkl = ["ndarray-linalg/intel-mkl-static"]
