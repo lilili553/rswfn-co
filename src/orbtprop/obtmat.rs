@@ -296,17 +296,17 @@ impl<'m> Calculator<'m> {
 /// 使用 MOCV 方法将全局坐标系系数映射到局部坐标系再映射回来
 pub fn mocv(L: &Array2<f64>, rcoefs: &Array2<f64>, keeps: &Array2<f64>) -> Array2<f64> {
     let nrow = rcoefs.nrows();
-    let Mi = if [1, 3, 5, 7, 9].contains(&nrow) {
+    let Mo = if [1, 3, 5, 7, 9].contains(&nrow) {
         mocv::get_tmat_sph(nrow, L)
     } else {
         mocv::get_tmat_car(nrow, L)
     };
     // let Mi = mocv::get_tmat_sph(nrow, L);
-    let Mi = Mi.t().to_owned();
-    let Mt = maths::inv(&Mi);
-    let mut tcoefs = Mt.dot(rcoefs); //全局系数映射到局部坐标系
+    let Mt = Mo.t().to_owned();
+    let Mi = maths::inv(&Mt);
+    let mut tcoefs = Mi.dot(rcoefs); //全局系数映射到局部坐标系
     tcoefs = &tcoefs * keeps; // 保留某个维度
-    let fcoefs = Mi.dot(&tcoefs); // 再映射回全局坐标系
+    let fcoefs = Mt.dot(&tcoefs); // 再映射回全局坐标系
     fcoefs
 }
 
@@ -317,7 +317,7 @@ pub fn mocv_atos(mole: &Mole, dest: &MocvDest) -> Vec<usize> {
     let ato_syms = mole.basis().atos().syms("raw");
     let ato_atms = mole.basis().atos().atms("raw");
 
-    let mut atm_syms = HashMap::new();
+    let mut atm_syms = HashMap::new(); // 每个原子保留的符号
     let natm = mole.atoms.len();
     for i in 0..natm {
         let geom = if mole.atoms.is_line(i) { 1 } else { 0 };
@@ -341,6 +341,7 @@ pub enum OrderDType {
     SI, // σ键级
     PI, // π键级
     DE, // δ键级
+    PH, // φ键级
 }
 
 pub enum MocvDest {
@@ -356,6 +357,7 @@ impl MocvDest {
             "OrderDecom-SI" => Some(MocvDest::OrderDecom(OrderDType::SI)),
             "OrderDecom-PI" => Some(MocvDest::OrderDecom(OrderDType::PI)),
             "OrderDecom-DE" => Some(MocvDest::OrderDecom(OrderDType::DE)),
+            "OrderDecom-PH" => Some(MocvDest::OrderDecom(OrderDType::PH)),
             "RoundOrder" => Some(MocvDest::RoundOrder),
             _ => None,
         }
@@ -379,19 +381,30 @@ fn mocv_syms(dest: &MocvDest, geom: usize) -> Vec<String> {
             ] // 平面分子电子布局
         }
         (MocvDest::PiProperty, 1) => {
-            vec!["PX", "PY", "XZ", "YZ", "D+1", "D-1"] // 线性分子电子布居
+            vec![
+                "PX", "PY", "D+1", "D-1", "D+2", "D-2", "F+1", "F-1", "F+2", "F-2", "F+3", "F-3",
+            ] // 线性分子电子布居
         }
-        (MocvDest::OrderDecom(OrderDType::SI), 0) => {
-            vec!["PX", "D+1", "XZ", "XY", "F+1", "XZZ"]
+        (MocvDest::OrderDecom(OrderDType::SI), _) => {
+            vec!["S", "PZ", "D 0", "F 0"]
         }
-        (MocvDest::OrderDecom(OrderDType::PI), 0) => {
-            vec!["PX", "D+1", "XZ", "XY", "F+1", "XZZ"]
+        (MocvDest::OrderDecom(OrderDType::PI), _) => {
+            vec!["PX", "PY", "D+1", "D-1", "F+1", "F-1"]
         }
-        (MocvDest::OrderDecom(OrderDType::DE), 0) => {
-            vec!["PX", "D+1", "XZ", "XY", "F+1", "XZZ"]
+        (MocvDest::OrderDecom(OrderDType::DE), _) => {
+            vec!["D+2", "D-2", "F+2", "F-2"]
         }
-        (MocvDest::RoundOrder, 1) => {
-            vec!["PX", "D+1", "XZ", "F+1", "XZZ"] // 线性分子键级
+        (MocvDest::OrderDecom(OrderDType::PH), _) => {
+            vec!["F+3", "F-3"]
+        }
+        (MocvDest::RoundOrder, _) => {
+            vec![
+                "PX", // P轨道
+                "XZ", "XY", // 笛卡尔D轨道
+                "D+1", "D-2", // 球谐D轨道
+                "XXY", "XXZ", "XYY", "XYZ", "XZZ", // 笛卡尔F轨道
+                "F-2", "F+1", "F+3", // 球谐F轨道
+            ] // 环轴键级
         }
         _ => vec![],
     };

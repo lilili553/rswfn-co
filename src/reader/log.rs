@@ -3,45 +3,12 @@
 use crate::base::{Atoms, Basis, Coefs, Shl};
 use crate::datas::consts::BOHR;
 use crate::maths;
-use crate::reader::{self, Reader, charge_number, read_lines, shl_basis, shl_forms};
+use crate::reader::{self, Nics, Reader, Vibe, charge_number, read_lines, shl_basis, shl_forms};
 use ndarray::{Array2, Axis, concatenate};
 use regex::Regex;
 use std::collections::HashMap;
 use std::process::exit;
 use std::sync::OnceLock;
-
-/// 振动频率信息
-///
-/// 包含频率、约化质量、力常数、红外强度及振动模式向量。
-pub struct Vibe {
-    pub freq: f64,
-    /// 约化质量
-    pub redm: f64,
-    /// 力常数
-    pub frcc: f64,
-    /// 红外强度
-    pub irin: f64,
-    /// 原子振动位移向量列表
-    pub vibs: Vec<[f64; 3]>,
-}
-
-impl Vibe {
-    /// 获取振动幅度最大的原子及其位移方向
-    pub fn get_max(&self) -> (usize, [f64; 3], f64) {
-        let mut max_idx = 0;
-        let mut max_vib = [0.0; 3];
-        let mut max_len = 0.0;
-        for (i, vib) in self.vibs.iter().enumerate() {
-            let li = maths::vec_len(vib);
-            if li > max_len {
-                max_len = li;
-                max_idx = i;
-                max_vib = vib.clone();
-            }
-        }
-        (max_idx, max_vib, max_len)
-    }
-}
 
 /// 高斯输出文件(.log)读取器
 pub struct LogReader {
@@ -138,6 +105,9 @@ impl LogReader {
             if line == " ******    1 imaginary frequencies (negative Signs) ****** " {
                 *marks.entry("vibrations".to_string()).or_insert(l as usize) = l as usize;
             }
+            if line == " SCF GIAO Magnetic shielding tensor (ppm):" {
+                *marks.entry("nics".to_string()).or_insert(l as usize) = l as usize;
+            }
         }
         LogReader {
             path: path.to_string(),
@@ -174,7 +144,10 @@ impl LogReader {
     }
 
     /// 读取系数矩阵
-    pub fn _read_coefs(&self, spin: &str) -> (Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>) {
+    pub fn _read_coefs(
+        &self,
+        spin: &str,
+    ) -> Result<(Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>), String> {
         let mark = self.marks.get(spin).unwrap();
         let job = self.read_job();
         if !job.contains("pop=full") {
@@ -261,7 +234,7 @@ impl LogReader {
                 .map(|(i, _)| {
                     engs_part[i..i + 10].trim().parse::<f64>().unwrap_or_else(|_| {
                         log::error!("轨道能量浮点数解析失败,loc:{},{:?}", loc + 1, engs_line);
-                        exit(0);
+                        0.0
                     })
                 })
                 .collect();
@@ -290,19 +263,19 @@ impl LogReader {
                 }
             }
         }
-        (ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat)
+        Ok((ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat))
     }
 
     /// 读取轨道系数(缓存结果)
     pub fn read_coefs(&self) -> &Option<(Vec<usize>, Vec<usize>, Vec<String>, Vec<f64>, Vec<String>, Array2<f64>)> {
         self._coefs.get_or_init(|| {
             if self.marks.contains_key("coefs") {
-                // let title_number = *self.marks.get("coefs").expect("titles get coefs error");
-                let (ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat) = self._read_coefs("coefs");
+                let coefs = self._read_coefs("coefs");
+                let (ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat) = coefs.unwrap();
                 Some((ato_atms, ato_shls, ato_syms, obt_engs, obt_syms, cmat))
             } else if self.marks.contains_key("coefs_a") && self.marks.contains_key("coefs_b") {
-                let coefs_a = self._read_coefs("coefs_a");
-                let coefs_b = self._read_coefs("coefs_b");
+                let coefs_a = self._read_coefs("coefs_a").unwrap();
+                let coefs_b = self._read_coefs("coefs_b").unwrap();
                 let ato_atms = coefs_a.0;
                 let ato_shls = coefs_a.1;
                 let ato_syms = coefs_a.2;
@@ -601,6 +574,57 @@ impl LogReader {
             vibrations.push(vibe);
         }
         Some(vibrations)
+    }
+
+    pub fn read_nics(&self) -> Option<Vec<Nics>> {
+        let irow = match self.marks.get("nics") {
+            Some(&i) => i + 1,
+            None => return None,
+        };
+        let s0 = Regex::new(r" +(\d+)  +([A-Za-z]+) +Isotropic = +(-?\d+.\d+) +Anisotropy = +(-?\d+.\d+)").unwrap();
+        let s1 = Regex::new(r" +XX= +(-?\d+.\d+)   YX= +(-?\d+.\d+)   ZX= +(-?\d+.\d+)").unwrap();
+        let s2 = Regex::new(r" +XY= +(-?\d+.\d+)   YY= +(-?\d+.\d+)   ZY= +(-?\d+.\d+)").unwrap();
+        let s3 = Regex::new(r" +XZ= +(-?\d+.\d+)   YZ= +(-?\d+.\d+)   ZZ= +(-?\d+.\d+)").unwrap();
+        let s4 = Regex::new(r"   Eigenvalues: +(-?\d+.\d+) +(-?\d+.\d+) +(-?\d+.\d+)").unwrap();
+        let (atms, xyzs) = self.read_geome(None);
+        let natm = atms.len();
+        let mut nics = vec![];
+        for l in (irow..irow + natm * 5).step_by(5) {
+            let mut idx = 0;
+            // let mut sym = String::new();
+            let mut iso = 0.0;
+            let mut ani = 0.0;
+            let mut mat = [0.0; 9];
+            let mut eig = [0.0; 3];
+            if let Some(caps) = s0.captures(&self.lines[l + 0]) {
+                idx = caps[1].parse::<usize>().unwrap();
+                // sym = caps[2].parse::<String>().unwrap();
+                iso = caps[3].parse::<f64>().unwrap();
+                ani = caps[4].parse::<f64>().unwrap();
+            }
+            if let Some(caps) = s1.captures(&self.lines[l + 1]) {
+                mat[0] = caps[1].parse::<f64>().unwrap();
+                mat[1] = caps[2].parse::<f64>().unwrap();
+                mat[2] = caps[3].parse::<f64>().unwrap();
+            }
+            if let Some(caps) = s2.captures(&self.lines[l + 2]) {
+                mat[3] = caps[1].parse::<f64>().unwrap();
+                mat[4] = caps[2].parse::<f64>().unwrap();
+                mat[5] = caps[3].parse::<f64>().unwrap();
+            }
+            if let Some(caps) = s3.captures(&self.lines[l + 3]) {
+                mat[6] = caps[1].parse::<f64>().unwrap();
+                mat[7] = caps[2].parse::<f64>().unwrap();
+                mat[8] = caps[3].parse::<f64>().unwrap();
+            }
+            if let Some(caps) = s4.captures(&self.lines[l + 4]) {
+                eig[0] = caps[1].parse::<f64>().unwrap();
+                eig[1] = caps[2].parse::<f64>().unwrap();
+                eig[2] = caps[3].parse::<f64>().unwrap();
+                nics.push(Nics { iso, ani, mat, eig });
+            }
+        }
+        Some(nics)
     }
 }
 

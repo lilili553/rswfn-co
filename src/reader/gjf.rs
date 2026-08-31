@@ -29,7 +29,7 @@ impl GjfReader {
     pub fn read_geome(&self) -> (Vec<usize>, Vec<[f64; 3]>) {
         let mut atms = vec![];
         let mut xyzs = vec![];
-        let s1 = Regex::new(r" ([A-Za-z\d]+) +(-?\d+.\d+) +(-?\d+.\d+) +(-?\d+.\d+)").expect("正则表达式生成失败");
+        let s1 = Regex::new(r" *([A-Za-z\d]+) +(-?\d+.\d+) +(-?\d+.\d+) +(-?\d+.\d+)").expect("正则表达式生成失败");
         for line in self.lines.iter() {
             if s1.is_match(line) {
                 let caps = s1.captures(line).expect("捕获失败");

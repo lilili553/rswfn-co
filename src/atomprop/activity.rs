@@ -3,7 +3,7 @@
 use ndarray::Array2;
 use std::collections::HashMap;
 
-use crate::base::{Mole, Vec3};
+use crate::base::{Mole, Stm, Vec3};
 
 use crate::atomprop;
 use crate::bondprop;
@@ -76,7 +76,7 @@ impl<'m> Calculator<'m> {
     /// # Returns
     /// 返回 `(dirs, vals)`，其中 `dirs` 是每个原子的 π 方向映射，
     /// `vals` 是每个原子 7 个值: `[e0, en, ep, f⁻, f⁺, f⁰, Δf]`。
-    pub fn fukui_pi(
+    pub fn fukui_pi_pocv(
         &self,
         mole_n: &Mole,
         mole_p: &Mole,
@@ -86,8 +86,8 @@ impl<'m> Calculator<'m> {
         let caler_n = atomprop::charge::Calculator::new(&mole_n);
         let caler_p = atomprop::charge::Calculator::new(&mole_p);
 
-        let (_dirs, eles_n) = caler_n.pi_pocv(ctype)?;
-        let (_dirs, eles_p) = caler_p.pi_pocv(ctype)?;
+        let (dirs, eles_n) = caler_n.pi_pocv(ctype)?;
+        let (dirs, eles_p) = caler_p.pi_pocv(ctype)?;
         let (dirs, eles_0) = caler_0.pi_pocv(ctype)?;
 
         let nele = eles_n.len();
@@ -103,6 +103,33 @@ impl<'m> Calculator<'m> {
             vals.push([e0, en, ep, _fn, _fp, f0, df]);
         }
         Ok((dirs, vals))
+    }
+
+    pub fn fukui_pi_mocv(
+        &self,
+        mole_n: &Mole,
+        mole_p: &Mole,
+        ctype: &str,
+    ) -> Result<(HashMap<usize, Stm>, Vec<usize>, Vec<[f64; 7]>), String> {
+        let caler_n = atomprop::charge::Calculator::new(&mole_n);
+        let caler_p = atomprop::charge::Calculator::new(&mole_p);
+        let caler_0 = atomprop::charge::Calculator::new(&self.mole);
+        let (stms, atos, eles_0) = caler_0.pi_mocv(ctype)?;
+        let (stms, atos, eles_n) = caler_n.pi_mocv(ctype)?;
+        let (stms, atos, eles_p) = caler_p.pi_mocv(ctype)?;
+        let nele = eles_n.len();
+        let mut vals = Vec::new();
+        for i in 0..nele {
+            let e0 = eles_0[i];
+            let en = eles_n[i];
+            let ep = eles_p[i];
+            let _fp = en - e0;
+            let _fn = e0 - ep;
+            let f0 = (_fn + _fp) / 2.0;
+            let df = _fp - _fn;
+            vals.push([e0, en, ep, _fn, _fp, f0, df]);
+        }
+        Ok((stms, atos, vals))
     }
 
     /// 计算单个原子在指定方向的福井函数。

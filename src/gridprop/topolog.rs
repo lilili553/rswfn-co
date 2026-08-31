@@ -111,9 +111,13 @@ impl<'m> Calculator<'m> {
                 let rho_caler = gridprop::density::Calculator::new(self.mole);
                 Box::new(move |grid| rho_caler.mol_rho_dm(grid, 2))
             }
-            "pi_rho" => {
+            "pi_rho_pocv" => {
                 let pi_caler = gridprop::density::Calculator::new(self.mole);
-                Box::new(move |grid| pi_caler.pi_rho(grid, 2))
+                Box::new(move |grid| pi_caler.pi_rho_pocv(grid, 2))
+            }
+            "pi_rho_mocv" => {
+                let pi_caler = gridprop::density::Calculator::new(self.mole);
+                Box::new(move |grid| pi_caler.pi_rho_mocv(grid, 2))
             }
             _ => panic!("未知函数:{}", func),
         }

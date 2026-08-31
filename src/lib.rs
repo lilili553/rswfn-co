@@ -1,3 +1,4 @@
+//! 波函数分析库
 pub mod base;
 pub mod datas;
 

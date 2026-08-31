@@ -1,7 +1,9 @@
 #![allow(non_snake_case)]
 use crate::datas::FACS;
 use crate::datas::btrans;
-/// 局部坐标系与全局坐标系的变换矩阵 Cg=Mt@Cl
+/// 局部坐标系与全局坐标系的变换矩阵
+/// C^l=(T^T)^{-1} @ C^g
+/// C^g=T^T @ C^l
 use ndarray::Array2;
 
 /// 根据壳层维度自动选择合适的变换矩阵
@@ -20,7 +22,7 @@ pub fn get_tmat_sph(num: usize, lmat: &Array2<f64>) -> Array2<f64> {
     match num {
         01 => tmat_s(lmat),
         03 => tmat_p(lmat),
-        05 => btrans::DMAT.t().dot(&get_tmat_car(06, lmat)).dot(&*btrans::DMAT), // [5,6] [6,6] [6,5]
+        05 => btrans::DMAT.t().dot(&get_tmat_car(06, lmat)).dot(&*btrans::DMAT),
         07 => btrans::FMAT.t().dot(&get_tmat_car(10, lmat)).dot(&*btrans::FMAT),
         09 => btrans::GMAT.t().dot(&get_tmat_car(15, lmat)).dot(&*btrans::GMAT),
         _ => panic!("不支持的类型:{}", num),
@@ -229,7 +231,7 @@ pub fn tmat_f(L: &Array2<f64>) -> Array2<f64> {
 /// 获取 g 轨道的变换矩阵
 pub fn tmat_g(L: &Array2<f64>) -> Array2<f64> {
     let [L11, L12, L13, L21, L22, L23, L31, L32, L33] = get_ts(L);
-    let mut MG: Array2<f64> = Array2::zeros((10, 10));
+    let mut MG: Array2<f64> = Array2::zeros((15, 15));
     MG[(0,0)]=L33.powi(4);
     MG[(0,1)]=4.0*L23*L33.powi(3);
     MG[(0,2)]=6.0*L23.powi(2)*L33.powi(2);
@@ -458,7 +460,7 @@ pub fn tmat_g(L: &Array2<f64>) -> Array2<f64> {
     MG
 }
 
-fn get_nmat(lmns: &Vec<[usize; 3]>) -> Array2<f64> {
+pub fn get_nmat(lmns: &Vec<[usize; 3]>) -> Array2<f64> {
     let nval = |lmn: &[usize; 3]| {
         let [l, m, n] = lmn;
         let fac = FACS[*l] * FACS[*m] * FACS[*n];

@@ -14,7 +14,8 @@ pub struct Calculator<'m> {
     pub mole: &'m Mole,
     pub atms: &'m Vec<usize>,
     wfn_caler: wfnfunc::Calculator<'m>,
-    mole_pi: OnceLock<Mole>,
+    mole_pi_pocv: OnceLock<Mole>,
+    mole_pi_mocv: OnceLock<Mole>,
     mole_spin: OnceLock<(Mole, Mole)>,
 }
 
@@ -28,16 +29,25 @@ impl<'m> Calculator<'m> {
             mole: mole,
             atms: atms,
             wfn_caler: wfn_caler,
-            mole_pi: OnceLock::new(),
+            mole_pi_pocv: OnceLock::new(),
+            mole_pi_mocv: OnceLock::new(),
             mole_spin: OnceLock::new(),
         }
     }
 
     /// 获取仅包含 π 电子成分的分子对象（懒加载）
-    pub fn mole_pi(&self) -> &Mole {
-        self.mole_pi.get_or_init(|| {
+    pub fn mole_pi_pocv(&self) -> &Mole {
+        self.mole_pi_pocv.get_or_init(|| {
             moleprop::variants::Calculator::new(self.mole)
                 .mole_pi_pocv()
+                .expect("π轨道投影失败")
+        })
+    }
+
+    pub fn mole_pi_mocv(&self) -> &Mole {
+        self.mole_pi_mocv.get_or_init(|| {
+            moleprop::variants::Calculator::new(self.mole)
+                .mole_pi_mocv()
                 .expect("π轨道投影失败")
         })
     }
@@ -295,10 +305,17 @@ impl<'m> Calculator<'m> {
         singl2 * grid_vals.val0
     }
 
-    /// 计算 π 电子密度
-    pub fn pi_rho(&self, grid: &[f64; 3], level: usize) -> GridVals {
-        let mole_pocv = self.mole_pi();
+    /// 计算 π 电子密度 (POCV)
+    pub fn pi_rho_pocv(&self, grid: &[f64; 3], level: usize) -> GridVals {
+        let mole_pocv = self.mole_pi_pocv();
         let rho_caler = Calculator::new(mole_pocv);
+        rho_caler.mol_rho_dm(grid, level)
+    }
+
+    /// 计算 π 电子密度（MOCV）
+    pub fn pi_rho_mocv(&self, grid: &[f64; 3], level: usize) -> GridVals {
+        let mole_mocv = self.mole_pi_mocv();
+        let rho_caler = Calculator::new(mole_mocv);
         rho_caler.mol_rho_dm(grid, level)
     }
 

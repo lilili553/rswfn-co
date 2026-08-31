@@ -583,35 +583,5 @@ impl fmt::Display for Basis {
     }
 }
 
-// 将笛卡尔重叠矩阵转为原始重叠矩阵
-// pub fn smat_raw(smat_car: &Array2<f64>, basis: &Basis) -> Array2<f64> {
-//     let shls = &basis.shls;
-//     let nshl = shls.len();
-//     let uplo_raw = shls.uplo("raw");
-//     let uplo_car = shls.uplo("car");
-//     let nato_raw = shls.nato("raw");
-//     let mut smat_raw = Array2::zeros((nato_raw, nato_raw));
-//     for i in 0..nshl {
-//         let ang_i = shls.get(i).ang;
-//         let [up_car_i, lo_car_i] = uplo_car[i];
-//         let [up_raw_i, lo_raw_i] = uplo_raw[i];
-//         let n_car_i = lo_car_i - up_car_i;
-//         let n_sph_i = lo_raw_i - up_raw_i;
-//         let tmati = btrans::car2sph_mat(ang_i);
-//         for j in 0..nshl {
-//             let angj = shls.get(j).ang;
-//             let [up_car_j, lo_car_j] = uplo_car[j];
-//             let [up_raw_j, lo_raw_j] = uplo_raw[j];
-//             let n_car_j = lo_car_j - up_car_j;
-//             let n_sph_j = lo_raw_j - up_raw_j;
-//             let tmatj = btrans::sph2car_mat(angj);
-//             let car_part = smat_car.slice(s![up_car_i..lo_car_i, up_car_j..lo_car_j]);
-//             let raw_part: Array2<f64> = if n_car_i == n_sph_i && n_car_j == n_sph_j { car_part.to_owned() } else { tmati.dot(&car_part).dot(&tmatj) };
-//             smat_raw.slice_mut(s![up_raw_i..lo_raw_i, up_raw_j..lo_raw_j]).assign(&raw_part);
-//         }
-//     }
-//     smat_raw
-// }
-
 unsafe impl Send for Basis {}
 unsafe impl Sync for Basis {}

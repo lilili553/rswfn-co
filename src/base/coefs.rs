@@ -211,6 +211,7 @@ impl Coefs {
     /// - `form`: 轨道形式（"raw", "sph", "car"）
     /// - `basis`: 基组信息
     pub fn get_cmat(&self,form:&str,basis: &Basis)->&Array2<f64>{
+        // let smat_car=basis.get_smat(form, atoms)
         match form{
             "raw"=>&self.coef_raw().cmat,
             "sph"=>&self.coef_sph(basis).cmat,
@@ -218,6 +219,11 @@ impl Coefs {
             _=>panic!("未知类型")
         }
     }
+
+    // pub fn get_cmat_car(&self, mole: &Mole) -> &Array2<f64> {
+    //     let cmat_car=self.get_cmat("car",mole)
+    //     &btrans::car2sph_fmat(smat_car, angs)
+    // }
 
     /// 设置指定形式的系数矩阵
     ///
@@ -336,22 +342,6 @@ impl Coefs {
         };
         dmat
     }
-
-    /// 返回按原子分组的起止索引范围
-    ///
-    /// # Parameters
-    /// - `form`: 轨道形式（"raw", "sph", "car"）
-    /// - `basis`: 基组信息
-    // pub fn atm_uplo(&self,form:&str,basis: &Basis)->&Vec<[usize;2]>{
-    //     match form{
-    //         "raw"=>self.coef_raw().uplo(),
-    //         "sph"=>self.coef_sph(basis).uplo(),
-    //         "car"=>self.coef_car(basis).uplo(),
-    //         _=>{
-    //             panic!("Invalid form for get_dmat");
-    //         }
-    //     }
-    // }
 
     /// 判断两个系数集合是否相等
     ///
@@ -495,8 +485,8 @@ pub fn from_raw(
         let nstp = lo_stp - up_stp;
         let cmat_raw_part = if nraw != nstp {
             let tmat = match form {
-                "car" => btrans::sph2car_mat(ang),
-                "sph" => btrans::car2sph_mat(ang),
+                "car" => btrans::sph2car_tmat(ang),
+                "sph" => btrans::car2sph_tmat(ang),
                 _ => panic!("Unsupported form: {}", form),
             };
             let part = cmat_raw.slice(s![up_raw..lo_raw, ..]);
@@ -545,8 +535,8 @@ pub fn into_raw(
         let nstp = lo_stp - up_stp;
         let cmat_stp_part = if nraw != nstp {
             let tmat = match form {
-                "car" => btrans::car2sph_mat(ang),
-                "sph" => btrans::sph2car_mat(ang),
+                "car" => btrans::car2sph_tmat(ang),
+                "sph" => btrans::sph2car_tmat(ang),
                 _ => panic!("Unsupported form: {}", form),
             };
             let part = cmat_stp.slice(s![up_stp..lo_stp, ..]);
@@ -562,5 +552,4 @@ pub fn into_raw(
     (cmat_raw, atms_raw, shls_raw, syms_raw)
 }
 
-unsafe impl Send for Coefs {}
-unsafe impl Sync for Coefs {}
+fn trans(from_from: &str, into_form: &str, cmat_from: &Array2<f64>) {}

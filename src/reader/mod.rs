@@ -17,6 +17,7 @@ use crate::base::Basis;
 use crate::base::Coefs;
 use crate::base::Mole;
 use crate::datas::btrans::sym2stp;
+use crate::maths;
 
 pub use cub::CubReader;
 pub use dmo::DmoReader;
@@ -199,4 +200,45 @@ pub fn shl_basis(datas: &Vec<BasData>, forms: &Vec<String>) -> Basis {
         shls[nshl - 1].coes.push(coe);
     }
     Basis::new(shls)
+}
+
+/// 振动频率信息
+///
+/// 包含频率、约化质量、力常数、红外强度及振动模式向量。
+pub struct Vibe {
+    pub freq: f64,
+    /// 约化质量
+    pub redm: f64,
+    /// 力常数
+    pub frcc: f64,
+    /// 红外强度
+    pub irin: f64,
+    /// 原子振动位移向量列表
+    pub vibs: Vec<[f64; 3]>,
+}
+
+impl Vibe {
+    /// 获取振动幅度最大的原子及其位移方向
+    pub fn get_max(&self) -> (usize, [f64; 3], f64) {
+        let mut max_idx = 0;
+        let mut max_vib = [0.0; 3];
+        let mut max_len = 0.0;
+        for (i, vib) in self.vibs.iter().enumerate() {
+            let li = maths::vec_len(vib);
+            if li > max_len {
+                max_len = li;
+                max_idx = i;
+                max_vib = vib.clone();
+            }
+        }
+        (max_idx, max_vib, max_len)
+    }
+}
+
+#[derive(Debug)]
+pub struct Nics {
+    pub iso: f64,
+    pub ani: f64,
+    pub mat: [f64; 9],
+    pub eig: [f64; 3],
 }

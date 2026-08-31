@@ -1,9 +1,11 @@
 use cached::proc_macro::cached;
-use ndarray::Array2;
+use ndarray::{Array2, s};
 use std::sync::LazyLock;
 
 use crate::maths;
 // 数据来源于卢天博客 http://sobereva.com/97
+
+// const D00:f64=
 #[rustfmt::skip]
 pub static DMAT: LazyLock<Array2<f64>> = LazyLock::new(|| {
     let mut dmat = Array2::<f64>::zeros((6,5));
@@ -131,7 +133,7 @@ pub static HMAT: LazyLock<Array2<f64>> = LazyLock::new(|| {
 });
 
 /// 根据角动量获取球谐到笛卡尔的变换矩阵
-pub fn sph2car_mat(ang: usize) -> Array2<f64> {
+pub fn sph2car_tmat(ang: usize) -> Array2<f64> {
     match ang {
         0 => Array2::eye(1),
         1 => Array2::eye(3),
@@ -146,17 +148,42 @@ pub fn sph2car_mat(ang: usize) -> Array2<f64> {
     }
 }
 
-// pub fn car2sph_mat(ang: usize) -> Array2<f64> {
-//     let tmat = sph2car_mat(ang);
-//     let tt = tmat.t();
-//     let tmat = tt.dot(&tmat);
-//     maths::inv(&tmat).dot(&tt)
-// }
+// 这个函数是错的！！
+pub fn car2sph_tmat(ang: usize) -> Array2<f64> {
+    let tmat = sph2car_tmat(ang);
+    tmat.t().to_owned()
+}
 
 /// 根据角动量获取笛卡尔到球谐的变换矩阵
-pub fn car2sph_mat(ang: usize) -> Array2<f64> {
-    let tmat = sph2car_mat(ang);
-    tmat.t().to_owned()
+pub fn car2sph_fmat(smat_car: &Array2<f64>, angs: &Vec<usize>) -> Array2<f64> {
+    let ncar: usize = angs.iter().map(|ang| ang2syms(*ang, "car").len()).sum();
+    let nsph: usize = angs.iter().map(|ang| ang2syms(*ang, "sph").len()).sum();
+    let mut irow = 0;
+    let mut icol = 0;
+    let mut fmat = Array2::zeros((ncar, nsph));
+    for ang in angs {
+        let tmat = match ang {
+            0 => Array2::eye(1),
+            1 => Array2::eye(3),
+            2 => DMAT.to_owned(),
+            3 => FMAT.to_owned(),
+            4 => GMAT.to_owned(),
+            5 => HMAT.to_owned(),
+            _ => {
+                dbg!("非法角动量:{}", ang);
+                panic!("非法角动量:{}", ang)
+            }
+        };
+        let nrow = tmat.nrows();
+        let ncol = tmat.ncols();
+        fmat.slice_mut(s![irow..irow + nrow, icol..icol + ncol]).assign(&tmat);
+        irow += nrow;
+        icol += ncol;
+    }
+    let inv = fmat.t().dot(smat_car).dot(&fmat);
+    let inv = maths::inv(&inv);
+    let fmat = inv.dot(&fmat.t()).dot(smat_car);
+    fmat
 }
 
 pub const MIX_S_SYMS: [&str; 1] = ["S"];

@@ -272,7 +272,7 @@ impl<'m> Calculator<'m> {
     ///
     /// # Returns
     /// `(stms, atos, eles)`，分别是局部坐标系映射、原子轨道索引和每个原子的 π 电子数
-    pub fn pi_mocv_v1(&self, ctype: &str) -> Result<(HashMap<usize, Stm>, Vec<usize>, Vec<f64>), String> {
+    pub fn pi_mocv(&self, ctype: &str) -> Result<(HashMap<usize, Stm>, Vec<usize>, Vec<f64>), String> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
         let dest = MocvDest::PiProperty;
         let (stms, atos, cmat_mocv) = obt_caler.pi_mocv(&dest);

@@ -5,7 +5,7 @@ use crate::base::{Mole, Stm, Vec3};
 use crate::integ::RsInt;
 use crate::maths::calc_dmat;
 // use crate::orbtprop::obtmat::Mocv;
-use crate::orbtprop::obtmat::MocvDest;
+use crate::orbtprop::obtmat::{MocvDest, mocv_atos};
 use crate::{atomprop, maths, orbtprop};
 
 /// 键级计算器，支持 Mayer 和 Wiberg 键级分析
@@ -139,56 +139,28 @@ impl<'m> Calculator<'m> {
     }
 
     /// 键级分解 获得σ,pi和δ键级
-    pub fn decom(&self, atms: [usize; 2]) -> Vec<f64> {
-        let keep_ato_syms_plan = vec![vec!["S", "PZ", "D 0"], vec!["PX", "XZ", "D-1"], vec!["XY"]];
-        let keep_ato_syms_line = vec![
-            vec!["S", "PZ", "D 0"],
-            vec!["PX", "PY", "XZ", "YZ", "D+2", "D-2"],
-            vec!["XY", "D+2", "D-2"],
-        ];
-        let dest = MocvDest::OrderDecom;
-        let cmat_caler = orbtprop::obtmat::Calculator::new(self.mole);
-        let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
-        let natm = self.mole.atoms.len();
+    pub fn decom(&self, ai: usize, aj: usize) -> Vec<f64> {
+        let ez = self.mole.atoms.vec(ai, aj).normalize();
+        let er = Vec3::rand();
+        let ey = ez.cross(&er);
+        let ex = ey.cross(&ez);
+        let stm = Stm::new(ex.into_arr(), ey.into_arr(), ez.into_arr());
         let mut stms = HashMap::new();
-        for i in 0..natm {
-            let stm = if i == atms[0] || i == atms[1] {
-                if i == atms[0] {
-                    dir_caler.LCS(i, Some(atms[1])).unwrap()
-                } else {
-                    dir_caler.LCS(i, Some(atms[0])).unwrap()
-                }
-            } else {
-                dir_caler.LCS(i, None).unwrap()
-            };
-            stms.insert(i, stm);
-        }
-        let int_caler = RsInt::new(self.mole.atoms(), self.mole.basis());
-        let [smat, _, _] = int_caler.mat1e_lcs(&stms, [1, 0, 0]);
-        let smat = int_caler.mat1e_raw(&smat);
-        let ato_syms = self.mole.basis().atos().syms("raw");
-        let nato = ato_syms.len();
-        let obt_occs = &self.mole.coefs().obt_occs;
-        let cmat_mocv = cmat_caler.mocv(&stms, &(0..nato).collect());
-        let dmat_mocv = calc_dmat(&cmat_mocv, obt_occs);
-        let uplo = self.mole.basis().atm_uplo("raw");
-        let mut vals = vec![];
-        let keep_ato_syms = if self.mole.atoms().is_line(atms[0]) {
-            &keep_ato_syms_line
-        } else {
-            &keep_ato_syms_plan
-        };
-        for keep_syms in keep_ato_syms {
-            let mut atos = vec![];
-            for (idx, sym) in ato_syms.iter().enumerate() {
-                if keep_syms.contains(&sym.as_str()) {
-                    atos.push(idx);
-                }
-            }
-            log::info!("atos:{:?}", atos);
-            let omat = mayer(&dmat_mocv, &smat);
-            vals.push(omat[(atms[0], atms[1])]);
-        }
+        stms.insert(ai, stm.clone());
+        stms.insert(aj, stm.clone());
+        let dests = ["OrderDecom-SI", "OrderDecom-PI", "OrderDecom-DE", "OrderDecom-PH"];
+        let sqrts = [false, false, false, false];
+        let dests: Vec<MocvDest> = dests.iter().map(|dest| MocvDest::from_str(*dest).unwrap()).collect();
+        let vals: Vec<f64> = dests
+            .iter()
+            .enumerate()
+            .map(|(i, dest)| {
+                let atos = mocv_atos(self.mole, dest);
+                let omat = self.mocv(&stms, &atos, "mayer");
+                let val = omat[(ai, aj)];
+                if sqrts[i] { val.sqrt() } else { val }
+            })
+            .collect();
         vals
     }
 

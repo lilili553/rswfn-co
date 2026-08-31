@@ -760,12 +760,12 @@ impl<'m> RsInt<'m> {
             let angi = shls.get(i).ang;
             let [cui, cli] = uplo_car[i];
             let [sui, sli] = uplo_sph[i];
-            let tmati = btrans::car2sph_mat(angi);
+            let tmati = btrans::car2sph_tmat(angi);
             for j in 0..nshl {
                 let angj = shls.get(j).ang;
                 let [cuj, clj] = uplo_car[j];
                 let [suj, slj] = uplo_sph[j];
-                let tmatj = btrans::sph2car_mat(angj);
+                let tmatj = btrans::sph2car_tmat(angj);
                 let car_part = car_mat.slice(s![cui..cli, cuj..clj]).to_owned();
                 let sph_part: Array2<f64> = tmati.dot(&car_part);
                 let sph_part = sph_part.dot(&tmatj);
@@ -790,14 +790,14 @@ impl<'m> RsInt<'m> {
             let [up_raw_i, lo_raw_i] = uplo_raw[i];
             let n_car_i = lo_car_i - up_car_i;
             let n_raw_i = lo_raw_i - up_raw_i;
-            let tmati = btrans::sph2car_mat(ang_i);
+            let tmati = btrans::sph2car_tmat(ang_i);
             for j in 0..nshl {
                 let angj = shls.get(j).ang;
                 let [up_car_j, lo_car_j] = uplo_car[j];
                 let [up_raw_j, lo_raw_j] = uplo_raw[j];
                 let n_car_j = lo_car_j - up_car_j;
                 let n_raw_j = lo_raw_j - up_raw_j;
-                let tmatj = btrans::sph2car_mat(angj);
+                let tmatj = btrans::sph2car_tmat(angj);
                 let mut raw_part = car_mat.slice(s![up_car_i..lo_car_i, up_car_j..lo_car_j]).to_owned();
                 if n_car_i != n_raw_i {
                     raw_part = tmati.t().dot(&raw_part)

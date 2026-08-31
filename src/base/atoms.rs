@@ -150,7 +150,7 @@ impl Atom {
         let mut rad = 0.0;
         let mut sym = None;
         for elem in datas::elems::ELEMS.iter() {
-            if nuc == elem.idx {
+            if nuc as isize == elem.idx {
                 rad = elems::atm2rad(nuc);
                 sym = Some(elem.sym.clone());
                 break;
@@ -498,6 +498,56 @@ impl Atoms {
         cent[1] /= count as f64;
         cent[2] /= count as f64;
         Vec3::from_arr(cent)
+    }
+
+    /// 键长
+    pub fn bond_len(&self, ai: usize, aj: usize) -> f64 {
+        return self.dist(ai, aj);
+    }
+
+    /// 键角
+    pub fn bond_ang(&self, ai: usize, aj: usize, ak: usize) -> f64 {
+        let vecji = self.vec(aj, ai);
+        let vecjk = self.vec(aj, ak);
+        vecji.angle(&vecjk)
+    }
+
+    /// 二面角
+    ///
+    /// 计算 ai-aj-ak-al 四个连续原子的二面角（绕 aj-ak 键），返回弧度值
+    /// 范围 (-π, π]，正值表示顺时针（右手定则沿 aj→ak 方向看）
+    ///
+    /// # Parameters
+    /// - `ai`: 第一个原子索引
+    /// - `aj`: 第二个原子索引
+    /// - `ak`: 第三个原子索引
+    /// - `al`: 第四个原子索引
+    pub fn face_ang(&self, ai: usize, aj: usize, ak: usize, al: usize) -> f64 {
+        // v1 = ri - rj, v2 = rk - rj（键轴）, v3 = rl - rk
+        let v1 = self.vec(ai, aj).normalize();
+        let v2 = self.vec(aj, ak).normalize();
+        let v3 = self.vec(ak, al).normalize();
+
+        // 平面 ai-aj-ak 的法向量 n1 = (ri-rj) × (rk-rj)
+        let n1 = v1.cross(&v2);
+        // 平面 aj-ak-al 的法向量 n2 = (rk-rj) × (rl-rk)
+        let n2 = v2.cross(&v3);
+
+        let n1_len = n1.length();
+        let n2_len = n2.length();
+
+        // 三点共线时无法定义二面角
+        if n1_len < 1e-10 || n2_len < 1e-10 {
+            return 0.0;
+        }
+
+        // cos(φ) = (n1·n2) / (|n1|·|n2|)
+        let cos_phi = n1.dot(&n2) / (n1_len * n2_len);
+        // 用 v2·(n1×n2) 确定符号（右手定则沿 v2 方向）
+        let n1_cross_n2 = n1.cross(&n2);
+        let sin_phi = v2.dot(&n1_cross_n2) / (n1_len * n2_len * v2.length());
+
+        f64::atan2(sin_phi, cos_phi)
     }
 
     /// 判断两个原子结构是否相等

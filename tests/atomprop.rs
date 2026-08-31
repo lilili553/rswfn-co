@@ -80,7 +80,7 @@ fn test5() {
     let mole = Mole::from_file(&path);
 
     let caler = atomprop::charge::Calculator::new(&mole);
-    let (dirs, atos, vals) = caler.pi_mocv_v1("mulliken").unwrap();
+    let (dirs, atos, vals) = caler.pi_mocv("mulliken").unwrap();
     let ans = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
     println!("pi_mocv:{:?}", vals);
     assert!(allclose(vals, ans, 1e-4));
