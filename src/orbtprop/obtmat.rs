@@ -44,7 +44,7 @@ impl<'m> Calculator<'m> {
         let uls = self.mole.basis().atm_uplo("raw");
         let mut atms: Vec<usize> = dirs.keys().cloned().collect();
         atms.sort_by(|x, y| x.cmp(y));
-        let cmat_raw = self.mole.coefs().get_cmat("raw", self.mole.basis());
+        let cmat_raw = self.mole.coefs().get_cmat("raw", self.mole);
         let [nato, nobt] = cmat_raw.shape().try_into().expect("获取矩阵形状失败");
         // 初始化投影的分子轨道
         let mut cmat_pocv: Array2<f64> = Array2::zeros([nato, nobt]);
@@ -139,7 +139,7 @@ impl<'m> Calculator<'m> {
             log::warn!("mocv:原子轨道长度为0");
             return Array2::zeros((nato, nato));
         }
-        let cmat_raw = self.mole.coefs().get_cmat("raw", self.mole.basis());
+        let cmat_raw = self.mole.coefs().get_cmat("raw", self.mole);
         let nato = cmat_raw.nrows();
         let nobt = cmat_raw.ncols();
         let mut cmat_mocv = Array2::zeros([nato, nobt]);
@@ -203,7 +203,7 @@ impl<'m> Calculator<'m> {
     /// 将分子轨道系数矩阵转换到原子局部坐标系
     pub fn ldao(&self, stms: &HashMap<usize, Stm>) -> Array2<f64> {
         let shls = &self.mole.basis().shls;
-        let cmat_mole = self.mole.coefs().get_cmat("car", self.mole.basis()).clone();
+        let cmat_mole = self.mole.coefs().get_cmat("car", self.mole).clone();
         let mut cmat_ldao = cmat_mole.clone();
         let uplo = shls.uplo("car");
         let nshl = shls.len();
@@ -226,8 +226,8 @@ impl<'m> Calculator<'m> {
     /// 轨道定域化分子轨道
     /// 使用 Pipek-Mezey 方法进行轨道定域化
     pub fn LMO(&self) {
-        let mut cmat = self.mole.coefs().get_cmat("raw", self.mole.basis()).to_owned();
-        let smat = self.mole.basis().get_smat("raw", self.mole.atoms()).to_owned();
+        let mut cmat = self.mole.coefs().get_cmat("raw", self.mole).to_owned();
+        let smat = self.mole.basis().get_smat("raw", self.mole).to_owned();
         let natm = self.mole.atoms().len();
         let uplo = self.mole.basis().atm_uplo("raw");
         // let [nato, nobt] = cmat.shape().try_into().expect("获取矩阵形状失败");

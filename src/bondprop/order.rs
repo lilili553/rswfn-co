@@ -36,8 +36,8 @@ impl<'m> Calculator<'m> {
     /// # 参数
     /// * `otype` - 键级类型，"mayer" 或 "wiberg"
     pub fn order(&self, otype: &str) -> Array2<f64> {
-        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
-        let dmat = self.mole.coefs().get_dmat("raw", self.mole.basis());
+        let smat = self.mole.basis().get_smat("raw", self.mole);
+        let dmat = self.mole.coefs().get_dmat("raw", self.mole);
         assert_eq!(smat.shape(), dmat.shape());
         let uplo = self.mole.basis().atm_uplo("raw");
         let omat_ato = match otype {
@@ -53,9 +53,9 @@ impl<'m> Calculator<'m> {
     /// 对于占据轨道，删去该轨道后键级减少表示正贡献；
     /// 对于空轨道，添加该轨道后键级增加表示正贡献。
     pub fn order_obt(&self, otype: &str, iobt: usize) -> Array2<f64> {
-        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
-        let old_cmat = self.mole.coefs().get_cmat("raw", self.mole.basis());
-        let old_dmat = self.mole.coefs().get_dmat("raw", self.mole.basis());
+        let smat = self.mole.basis().get_smat("raw", self.mole);
+        let old_cmat = self.mole.coefs().get_cmat("raw", self.mole);
+        let old_dmat = self.mole.coefs().get_dmat("raw", self.mole);
         let nato = old_cmat.nrows();
         let nobt = old_cmat.ncols();
         let obt_occs = self.mole.coefs().obt_occs.clone();
@@ -91,8 +91,7 @@ impl<'m> Calculator<'m> {
         let cmat_pocv = obt_caler.pocv(dirs, keep_other_atm, keep_other_sym)?;
 
         let mut mole_pocv = self.mole.clone();
-        let basis = mole_pocv.basis.as_ref().unwrap();
-        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, basis);
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, self.mole);
         let caler = Calculator::new(&mole_pocv);
         Ok(caler.order(otype))
     }
@@ -102,8 +101,7 @@ impl<'m> Calculator<'m> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
         let cmat_mocv = obt_caler.mocv(stms, atos);
         let mut mole_mocv = self.mole.clone();
-        let basis = mole_mocv.basis.as_ref().unwrap();
-        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, basis);
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
         let caler = Calculator::new(&mole_mocv);
         caler.order(otype)
     }
@@ -115,8 +113,7 @@ impl<'m> Calculator<'m> {
         let (dirs, cmat_pocv) = obt_caler.pi_pocv()?;
 
         let mut mole_pocv = self.mole.clone();
-        let basis = mole_pocv.basis.as_ref().unwrap();
-        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, basis);
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, self.mole);
 
         let caler = Calculator::new(&mole_pocv);
         let mut omat = caler.order(otype);
@@ -130,8 +127,7 @@ impl<'m> Calculator<'m> {
         let dest = MocvDest::PiProperty;
         let (stms, atos, cmat_mocv) = obt_caler.pi_mocv(&dest);
         let mut mole_mocv = self.mole.clone();
-        let basis = mole_mocv.basis.as_ref().unwrap();
-        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, basis);
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
         let caler = Calculator::new(&mole_mocv);
         let mut omat = caler.order(otype);
         omat = omat.abs().sqrt(); // 取绝对值再开根号

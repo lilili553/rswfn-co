@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 // 此模块定义积分函数
 // use ndarray::Array2;
-use crate::base::{Ato, Atoms, Atos, Basis, Mole, Stm};
+use crate::base::{Ato, Atos, Mole, Stm};
 use crate::datas::FACS;
 use crate::datas::btrans::{ang2lmns, sym2lmn};
 use crate::datas::integ::{RHM, WHM};
@@ -577,18 +577,17 @@ impl Mat2e {
 /// 提供单电子积分(重叠、动能、核引)和双电子积分的计算功能,
 /// 以及球谐与笛卡尔基函数的转换。
 pub struct RsInt<'m> {
-    basis: &'m Basis,
-    /// 每个原子的坐标
-    xyzs: &'m Vec<[f64; 3]>,
-    crgs: &'m Vec<f64>,
+    /// 分子信息引用
+    mole: &'m Mole,
 }
 
 impl<'m> RsInt<'m> {
     /// 创建新的RsInt实例
-    pub fn new(atoms: &'m Atoms, basis: &'m Basis) -> Self {
-        let xyzs = atoms.xyzs();
-        let crgs = atoms.crgs();
-        Self { basis, xyzs, crgs }
+    ///
+    /// # Parameters
+    /// - `mole`: 分子信息，提供原子结构与基组用于积分计算
+    pub fn new(mole: &'m Mole) -> Self {
+        Self { mole }
     }
 
     /// 计算重叠矩阵
@@ -609,15 +608,17 @@ impl<'m> RsInt<'m> {
     /// 计算单电子积分(使用libcint)
     #[cfg(feature = "use-cint")]
     pub fn mat1e(&self, cals: [usize; 3], form: &str) -> [Array2<f64>; 3] {
-        let cint = cint::Cint::new(self.basis, self.xyzs, self.crgs);
+        let cint = cint::Cint::new(self.mole);
         cint.calc_int1e(form, cals)
     }
 
     /// 计算单电子积分(Rust实现)
     #[cfg(not(feature = "use-cint"))]
     pub fn mat1e(&self, cals: [usize; 3], form: &str) -> [Array2<f64>; 3] {
-        let atos = &self.basis.atos().cars;
+        let atos = &self.mole.basis().atos().cars;
         let nato = atos.len(); // 原子轨道数量
+        let xyzs = self.mole.atoms().xyzs();
+        let crgs = self.mole.atoms().crgs();
         let mut smat = Array2::zeros((nato, nato)); // 核引矩阵
         let mut tmat = Array2::zeros((nato, nato)); // 核引矩阵
         let mut vmat = Array2::zeros((nato, nato)); // 核引矩阵
@@ -632,8 +633,8 @@ impl<'m> RsInt<'m> {
 
                 let gi_lmn = atos[i].lmn();
                 let gj_lmn = atos[j].lmn();
-                let gi_xyz = self.xyzs[atos[i].atm];
-                let gj_xyz = self.xyzs[atos[j].atm];
+                let gi_xyz = xyzs[atos[i].atm];
+                let gj_xyz = xyzs[atos[j].atm];
                 for a in 0..ni {
                     for b in 0..nj {
                         let Ga = Gto::new(*gi_lmn, atos[i].alps[a], gi_xyz);
@@ -649,7 +650,7 @@ impl<'m> RsInt<'m> {
                             tmat[(i, j)] += coef * tval;
                         }
                         if cals[2] == 1 {
-                            let vval = ints.vval(&self.xyzs, &self.crgs);
+                            let vval = ints.vval(xyzs, crgs);
                             vmat[(i, j)] += coef * vval;
                         }
                     }
@@ -692,8 +693,9 @@ impl<'m> RsInt<'m> {
     /// 计算双电子库伦积分(Rust实现)
     #[cfg(not(feature = "use-cint"))]
     pub fn mat2e(&self, form: &str) -> Mat2e {
-        let atos = &self.basis.atos().cars;
+        let atos = &self.mole.basis().atos().cars;
         let nato = atos.len(); // 原子轨道数量
+        let xyzs = self.mole.atoms().xyzs();
         let mut emat = Mat2e::new(nato);
         // let count = nato * nato * nato * nato;
         // let mut index = 0;
@@ -713,10 +715,10 @@ impl<'m> RsInt<'m> {
                             let gk_lmn = atos[k].lmn();
                             let gl_lmn = atos[l].lmn();
 
-                            let gi_xyz = self.xyzs[atos[i].atm];
-                            let gj_xyz = self.xyzs[atos[j].atm];
-                            let gk_xyz = self.xyzs[atos[k].atm];
-                            let gl_xyz = self.xyzs[atos[l].atm];
+                            let gi_xyz = xyzs[atos[i].atm];
+                            let gj_xyz = xyzs[atos[j].atm];
+                            let gk_xyz = xyzs[atos[k].atm];
+                            let gl_xyz = xyzs[atos[l].atm];
 
                             let coes_i = atos[i].coes_norm();
                             let coes_j = atos[j].coes_norm();
@@ -750,7 +752,7 @@ impl<'m> RsInt<'m> {
 
     /// 将笛卡尔单电子积分转换为球谐形式
     pub fn mat1e_sph(&self, car_mat: &Array2<f64>) -> Array2<f64> {
-        let shls = &self.basis.shls;
+        let shls = &self.mole.basis().shls;
         let nshl = shls.len();
         let uplo_sph = shls.uplo("sph");
         let uplo_car = shls.uplo("car");
@@ -778,7 +780,7 @@ impl<'m> RsInt<'m> {
 
     /// 将笛卡尔单电子积分转换为原始(非收缩)形式
     pub fn mat1e_raw(&self, car_mat: &Array2<f64>) -> Array2<f64> {
-        let shls = &self.basis.shls;
+        let shls = &self.mole.basis().shls;
         let nshl = shls.len();
         let uplo_raw = shls.uplo("raw");
         let uplo_car = shls.uplo("car");
@@ -815,7 +817,7 @@ impl<'m> RsInt<'m> {
 
     /// 获取局部坐标系的单电子积分
     pub fn mat1e_lcs(&self, stms: &HashMap<usize, Stm>, cals: [usize; 3]) -> [Array2<f64>; 3] {
-        let shls = &self.basis.shls;
+        let shls = &self.mole.basis().shls;
         let uplo = shls.uplo("car");
         let nshl = shls.len();
         // let atms = &map_shl.atms;
@@ -859,7 +861,7 @@ impl<'m> RsInt<'m> {
 
     /// 获取局部坐标系的双电子积分
     pub fn mat2e_lcs(&self, stms: &HashMap<usize, Stm>) -> Mat2e {
-        let shls = &self.basis.shls;
+        let shls = &self.mole.basis().shls;
         let uplo = shls.uplo("car");
         let nshl = uplo.len();
         // let atms = &map_shl.atms;

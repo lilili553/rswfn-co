@@ -28,9 +28,9 @@ impl<'m> Calculator<'m> {
         let mut caler = orbtprop::obtmat::Calculator::new(self.mole);
         caler.vobt = true;
         caler.atms = self.atms;
-        let cmat = self.mole.coefs().get_cmat("raw", self.mole.basis());
+        let cmat = self.mole.coefs().get_cmat("raw", self.mole);
         let (_, cmat_p) = caler.pi_pocv().expect("POCV 投影失败");
-        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
+        let smat = self.mole.basis().get_smat("raw", self.mole);
         let k = if self.mole.is_open() { 1.0 } else { 2.0 };
         let cmat_s = cmat - &cmat_p;
         let nobt = cmat.ncols();
@@ -56,8 +56,8 @@ impl<'m> Calculator<'m> {
         caler.atms = self.atms;
         let dest = MocvDest::PiProperty;
         let (_, _, cmat_p) = caler.pi_mocv(&dest);
-        let cmat = self.mole.coefs().get_cmat("raw", self.mole.basis());
-        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
+        let cmat = self.mole.coefs().get_cmat("raw", self.mole);
+        let smat = self.mole.basis().get_smat("raw", self.mole);
         let k = if self.mole.is_open() { 1.0 } else { 2.0 };
         let cmat_s = cmat - &cmat_p;
         let nobt = cmat.ncols();
@@ -83,8 +83,8 @@ impl<'m> Calculator<'m> {
         // caler.vobt = true;
         // let atms = self.mole.atoms().idxs();
         // let (dirs, cmat) = caler.pi_pocv(atms);
-        let cmat = self.mole.coefs().get_cmat("sph", self.mole.basis());
-        let smat = self.mole.basis().get_smat("sph", self.mole.atoms());
+        let cmat = self.mole.coefs().get_cmat("sph", self.mole);
+        let smat = self.mole.basis().get_smat("sph", self.mole);
         let mut eles = Vec::new();
         let nobt = cmat.ncols();
         let k = if self.mole.is_open() { 1.0 } else { 2.0 };

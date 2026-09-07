@@ -1,7 +1,7 @@
 use cached::proc_macro::cached;
 use ndarray::Array2;
 
-use crate::base::{Ato, Atom, Atoms, Mole};
+use crate::base::Mole;
 use crate::datas::btrans::sym2lmn;
 use crate::datas::consts::BOHR;
 use crate::datas::{FACS, elems};
@@ -101,7 +101,7 @@ impl<'m> Calculator<'m> {
         level: usize,
         // wfns: &(Vec<f64>, Vec<[f64; 3]>, Vec<[[f64; 3]; 3]>),
     ) -> GridVals {
-        let cmat_car = self.mole.coefs().get_cmat("car", self.mole.basis());
+        let cmat_car = self.mole.coefs().get_cmat("car", self.mole);
         let nato = cmat_car.nrows(); // 原子轨道数量
         let wfns = self.ato_wfn(grid, level);
         let mut obt_wfn0 = 0.0;
@@ -136,12 +136,13 @@ impl<'m> Calculator<'m> {
 
 /// 计算指定点处所有原子轨道的波函数（自由函数版本）
 pub fn ato_wfn(
-    atos: &Vec<Ato>,   // 原子轨道信息
-    grid: &[f64; 3],   // 空间中任意一点的坐标
-    atms: &Vec<usize>, // 计算的原子索引
-    atoms: &Atoms,     // 所有原子的坐标
+    mole: &Mole,     // 分子信息，提供基组与原子结构
+    grid: &[f64; 3], // 空间中任意一点的坐标
     level: usize,
 ) -> (Vec<f64>, Vec<[f64; 3]>, Vec<[[f64; 3]; 3]>) {
+    let atos = &mole.basis().atos().cars;
+    let atms = mole.atoms().idxs();
+    let atoms = mole.atoms();
     let nato = atos.len();
     let mut wfn0 = vec![0.0; nato];
     let mut wfn1 = vec![[0.0; 3]; nato];

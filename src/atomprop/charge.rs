@@ -72,11 +72,10 @@ impl<'m> Calculator<'m> {
     /// # Returns
     /// 每个原子的电子数
     pub fn mulliken(&self) -> Vec<f64> {
-        let atoms = self.mole.atoms();
         let basis = self.mole.basis();
         let coefs = self.mole.coefs();
-        let dmat = coefs.get_dmat("raw", basis);
-        let smat = basis.get_smat("raw", atoms); // 重叠矩阵
+        let dmat = coefs.get_dmat("raw", self.mole);
+        let smat = basis.get_smat("raw", self.mole); // 重叠矩阵
         let uplo = basis.atm_uplo("raw");
         mulliken(dmat, smat, &uplo)
     }
@@ -86,8 +85,8 @@ impl<'m> Calculator<'m> {
     /// # Returns
     /// 每个原子的电子数
     pub fn lowdin(&self) -> Vec<f64> {
-        let dmat = self.mole.coefs().get_dmat("raw", self.mole.basis());
-        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
+        let dmat = self.mole.coefs().get_dmat("raw", self.mole);
+        let smat = self.mole.basis().get_smat("raw", self.mole);
         let uplo = self.mole.basis().atm_uplo("raw");
         lowdin(dmat, smat, &uplo)
     }
@@ -170,8 +169,8 @@ impl<'m> Calculator<'m> {
     /// # Returns
     /// 每个原子在该轨道中的电子数
     pub fn eles_obt(&self, ctype: &str, obt: usize) -> Vec<f64> {
-        let smat = self.mole.basis().get_smat("raw", self.mole.atoms());
-        let old_cmat = self.mole.coefs().get_cmat("raw", self.mole.basis());
+        let smat = self.mole.basis().get_smat("raw", self.mole);
+        let old_cmat = self.mole.coefs().get_cmat("raw", self.mole);
         let nato = old_cmat.nrows();
         let nobt = old_cmat.ncols();
         let mut new_cmat = Array2::zeros((nato, nobt));
@@ -203,8 +202,7 @@ impl<'m> Calculator<'m> {
         let cmat_pocv = obt_caler.pocv(dirs, keep_other_atm, keep_other_sym)?;
 
         let mut mole_pocv = self.mole.clone();
-        let basis = mole_pocv.basis.as_ref().unwrap();
-        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, basis);
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, self.mole);
         let ele_caler = Calculator::new(&mole_pocv);
         let eles = match ctype {
             "mulliken" => ele_caler.mulliken(),
@@ -229,8 +227,7 @@ impl<'m> Calculator<'m> {
         let cmat_mocv = obt_caler.mocv(stms, atos);
 
         let mut mole_mocv = self.mole.clone();
-        let basis = mole_mocv.basis.as_ref().unwrap();
-        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, basis);
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
         let ele_caler = Calculator::new(&mole_mocv);
         match ctype {
             "mulliken" => ele_caler.mulliken(),
@@ -253,8 +250,7 @@ impl<'m> Calculator<'m> {
         let (dirs, cmat_pocv) = obt_caler.pi_pocv()?;
 
         let mut mole_pocv = self.mole.clone();
-        let basis = mole_pocv.basis.as_ref().unwrap();
-        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, basis);
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pocv, self.mole);
         let ele_caler = Calculator::new(&mole_pocv);
         let eles = match ctype {
             "mulliken" => ele_caler.mulliken(),
@@ -277,8 +273,7 @@ impl<'m> Calculator<'m> {
         let dest = MocvDest::PiProperty;
         let (stms, atos, cmat_mocv) = obt_caler.pi_mocv(&dest);
         let mut mole_mocv = self.mole.clone();
-        let basis = mole_mocv.basis.as_ref().unwrap();
-        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, basis);
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
         let caler = Calculator::new(&mole_mocv);
         let eles = match ctype {
             "mulliken" => caler.mulliken(),
@@ -291,20 +286,18 @@ impl<'m> Calculator<'m> {
 
     pub fn pi_mocv_v2(&self, ctype: &str) -> Result<(HashMap<usize, Stm>, Vec<usize>, Vec<f64>), String> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
-        let cmat = self.mole.coefs().get_cmat("raw", self.mole.basis());
+        let cmat = self.mole.coefs().get_cmat("raw", self.mole);
         let eles = self.eles(ctype);
         let dest = MocvDest::PiProperty;
         let (stms, atos, cmat_pi) = obt_caler.pi_mocv(&dest);
         let mut mole_pi = self.mole.clone();
-        let basis = mole_pi.basis.as_ref().unwrap();
-        mole_pi.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pi, basis);
+        mole_pi.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pi, self.mole);
         let caler_pi = Calculator::new(&mole_pi);
         let eles_pp = caler_pi.eles(ctype);
 
         let cmat_si = cmat - &cmat_pi;
         let mut mole_si = self.mole.clone();
-        let basis = mole_si.basis.as_ref().unwrap();
-        mole_si.coefs.as_mut().unwrap().set_cmat("raw", &cmat_si, basis);
+        mole_si.coefs.as_mut().unwrap().set_cmat("raw", &cmat_si, self.mole);
         let caler_si = Calculator::new(&mole_si);
         let eles_ss = caler_si.eles(ctype);
 

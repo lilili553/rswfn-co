@@ -1,6 +1,5 @@
 use ndarray::{Array2, s};
 
-use crate::base::Atoms;
 use crate::base::Mole;
 use crate::datas::FACS;
 use crate::datas::btrans;
@@ -520,10 +519,10 @@ impl Basis {
     ///
     /// # Parameters
     /// - `form`: 轨道形式（"raw", "sph", "car"）
-    /// - `atoms`: 原子结构，用于积分计算
-    pub fn get_smat(&self, form: &str, atoms: &Atoms) -> &Array2<f64> {
+    /// - `mole`: 分子信息，提供原子结构用于积分计算
+    pub fn get_smat(&self, form: &str, mole: &Mole) -> &Array2<f64> {
         let smats = self.smat.get_or_init(|| {
-            let int_caler = RsInt::new(atoms, self);
+            let int_caler = RsInt::new(mole);
             let smat_car = int_caler.smat("car");
             let smat_sph = int_caler.mat1e_sph(&smat_car);
             let smat_raw = int_caler.mat1e_raw(&smat_car);

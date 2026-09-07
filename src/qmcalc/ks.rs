@@ -34,16 +34,13 @@ impl<'m> RKS<'m> {
     pub fn new(mole: &'m Mole) -> Self {
         let grid_caler = gridprop::dftgrid::Calculator::new(mole);
         let (grids, weits) = grid_caler.mol_grids(100, 74);
-        let atos = &mole.basis().atos().cars;
-        let atms = mole.atoms.idxs();
         let ngrid = grids.len();
-        let atoms = &mole.atoms;
         let mut wfn0s = Vec::with_capacity(ngrid);
         let mut wfn1s = Vec::with_capacity(ngrid);
         let mut wfn2s = Vec::with_capacity(ngrid);
         for i in 0..ngrid {
             let grid = &grids[i];
-            let (wfn0, wfn1, wfn2) = ato_wfn(atos, grid, atms, atoms, 2);
+            let (wfn0, wfn1, wfn2) = ato_wfn(mole, grid, 2);
             wfn0s.push(wfn0);
             wfn1s.push(wfn1);
             wfn2s.push(wfn2);
@@ -158,7 +155,7 @@ impl<'m> RKS<'m> {
     pub fn run(&self) {
         // 准备电子积分
 
-        let int_caler = RsInt::new(self.mole.atoms(), self.mole.basis());
+        let int_caler = RsInt::new(self.mole);
         let [smat, tmat, vmat] = int_caler.mat1e([1, 1, 1], "car");
         let hmat = &tmat + &vmat; //核心哈密顿矩阵
         println!("核心哈密顿矩阵:");

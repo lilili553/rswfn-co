@@ -1,6 +1,5 @@
 use crate::{
-    base::Basis,
-    base::mole::Mole,
+    base::Mole,
     datas::{
         self,
         btrans::{self, len2syms},
@@ -175,10 +174,10 @@ impl Coefs {
     /// 返回球谐形式的系数（惰性初始化）
     ///
     /// # Parameters
-    /// - `basis`: 基组信息，用于形式转换
-    pub fn coef_sph(&self, basis: &Basis) -> &Coef {
+    /// - `mole`: 分子信息，提供基组用于形式转换
+    pub fn coef_sph(&self, mole: &Mole) -> &Coef {
         self._coef_sph.get_or_init(|| {
-            let (cmat,atms,shls,syms)=from_raw(&self._coef_raw.cmat, basis, "sph");
+            let (cmat,atms,shls,syms)=from_raw(&self._coef_raw.cmat, mole, "sph");
             Coef::new(&atms, &shls, &syms, &cmat)
         })
     }
@@ -186,10 +185,10 @@ impl Coefs {
     /// 返回笛卡尔形式的系数（惰性初始化）
     ///
     /// # Parameters
-    /// - `basis`: 基组信息，用于形式转换
-    pub fn coef_car(&self, basis: &Basis) -> &Coef {
+    /// - `mole`: 分子信息，提供基组用于形式转换
+    pub fn coef_car(&self, mole: &Mole) -> &Coef {
         self._coef_car.get_or_init(|| {
-            let (cmat,atms,shls,syms)=from_raw(&self._coef_raw.cmat, basis, "car");
+            let (cmat,atms,shls,syms)=from_raw(&self._coef_raw.cmat, mole, "car");
             Coef::new(&atms, &shls, &syms, &cmat)
         })
     }
@@ -209,13 +208,12 @@ impl Coefs {
     ///
     /// # Parameters
     /// - `form`: 轨道形式（"raw", "sph", "car"）
-    /// - `basis`: 基组信息
-    pub fn get_cmat(&self,form:&str,basis: &Basis)->&Array2<f64>{
-        // let smat_car=basis.get_smat(form, atoms)
+    /// - `mole`: 分子信息，提供基组用于形式转换
+    pub fn get_cmat(&self,form:&str,mole: &Mole)->&Array2<f64>{
         match form{
             "raw"=>&self.coef_raw().cmat,
-            "sph"=>&self.coef_sph(basis).cmat,
-            "car"=>&self.coef_car(basis).cmat,
+            "sph"=>&self.coef_sph(mole).cmat,
+            "car"=>&self.coef_car(mole).cmat,
             _=>panic!("未知类型")
         }
     }
@@ -232,8 +230,8 @@ impl Coefs {
     /// # Parameters
     /// - `form`: 输入的系数矩阵形式（"raw", "sph", "car"）
     /// - `cmat`: 系数矩阵
-    /// - `basis`: 基组信息，用于形式转换
-    pub fn set_cmat(&mut self,form:&str,cmat:&Array2<f64>,basis: &Basis){
+    /// - `mole`: 分子信息，提供基组用于形式转换
+    pub fn set_cmat(&mut self,form:&str,cmat:&Array2<f64>,mole: &Mole){
         self._coef_car.take();
         self._coef_sph.take();
         match form{
@@ -241,10 +239,10 @@ impl Coefs {
                 self._coef_raw.cmat=cmat.clone();
             }
             "sph"=>{
-                self._coef_raw.cmat=into_raw(cmat, basis, "sph").0;
+                self._coef_raw.cmat=into_raw(cmat, mole, "sph").0;
             },
             "car"=>{
-                self._coef_raw.cmat=into_raw(cmat, basis, "car").0;
+                self._coef_raw.cmat=into_raw(cmat, mole, "car").0;
             }
             _=>panic!("未知的form")
         };
@@ -275,12 +273,12 @@ impl Coefs {
     /// 获取α和β电子数
     ///
     /// # Parameters
-    /// - `basis`: 基组信息
+    /// - `mole`: 分子信息，提供基组用于形式转换
     ///
     /// # Returns
     /// 长度为2的数组，[α电子数, β电子数]
-    pub fn obt_eles(&self,basis: &Basis)->[usize;2]{
-        let cmat=self.get_cmat("sph",basis);
+    pub fn obt_eles(&self,mole: &Mole)->[usize;2]{
+        let cmat=self.get_cmat("sph",mole);
         let nato=cmat.nrows(); // 原子轨道数
         let nobt=cmat.ncols(); // 分子轨道数
         let open=nobt as f64 > nato as f64 *1.5;
@@ -313,10 +311,9 @@ impl Coefs {
     ///
     /// # Parameters
     /// - `form`: 轨道形式（"raw", "sph", "car"）
-    /// - `basis`: 基组信息
-    pub fn get_dmat(&self,form:&str,basis: &Basis)->&Array2<f64>{
-        // let mole=self.mole();
-        let cmat=self.get_cmat(form,basis);
+    /// - `mole`: 分子信息，提供基组用于形式转换
+    pub fn get_dmat(&self,form:&str,mole: &Mole)->&Array2<f64>{
+        let cmat=self.get_cmat(form,mole);
         let dmat=match form {
             "raw"=>{
                 let coef_raw=self.coef_raw();
@@ -325,13 +322,13 @@ impl Coefs {
                 })
             }
             "sph"=>{
-                let coef_sph=self.coef_sph(basis);
+                let coef_sph=self.coef_sph(mole);
                 coef_sph._dmat.get_or_init(||{
                     maths::calc_dmat(cmat, &self.obt_occs)
                 })
             },
             "car"=>{
-                let coef_car=self.coef_car(basis);
+                let coef_car=self.coef_car(mole);
                 coef_car._dmat.get_or_init(||{
                     maths::calc_dmat(cmat, &self.obt_occs)
                 })
@@ -455,46 +452,43 @@ impl fmt::Display for Coefs {
 ///
 /// # Parameters
 /// - `cmat_raw`: 原始形式的系数矩阵
-/// - `basis`: 基组信息
+/// - `mole`: 分子信息，提供基组用于形式转换
 /// - `form`: 目标轨道形式（"sph" 或 "car"）
 ///
 /// # Returns
 /// 元组 (转换后的系数矩阵, 原子索引列表, 壳层索引列表, 轨道符号列表)
-pub fn from_raw(
-    cmat_raw: &Array2<f64>,
-    basis: &Basis,
-    form: &str,
-) -> (Array2<f64>, Vec<usize>, Vec<usize>, Vec<String>) {
+pub fn from_raw(cmat_raw: &Array2<f64>, mole: &Mole, form: &str) -> (Array2<f64>, Vec<usize>, Vec<usize>, Vec<String>) {
+    let basis = mole.basis();
     let shls = &basis.shls;
+    let nshl = shls.len();
+
+    // 原始基组每个壳层的类型和目标类型
+    let mut from_forms = Vec::with_capacity(nshl);
+    let mut into_forms = Vec::with_capacity(nshl);
+    let mut angs = Vec::with_capacity(nshl);
+    for i in 0..nshl {
+        let shl = shls.get(i);
+        from_forms.push(shl.form.as_str());
+        into_forms.push(form);
+        angs.push(shl.ang);
+    }
+
+    // 原始基组的重叠矩阵，作为度量修正的参考
+    let smat_raw = basis.get_smat("raw", mole);
+
+    // 整体变换矩阵：cmat_stp = fmat * cmat_raw
+    let fmat = btrans::get_fmat(smat_raw, &from_forms, &into_forms, &angs);
+    let cmat_stp = fmat.dot(cmat_raw);
+
+    // 生成目标基组的原子/壳层/轨道符号列表
+    let uplo_stp = shls.uplo(form);
     let mut atms_stp = vec![];
     let mut shls_stp = vec![];
     let mut syms_stp = vec![];
-    let mut idx = 0;
-    let uplo_raw = shls.uplo("raw");
-    let uplo_stp = shls.uplo(form);
-    let nato_raw = shls.nato("raw");
-    let nato_stp = shls.nato(form);
-    let mut cmat_stp = Array2::zeros((nato_stp, cmat_raw.ncols()));
-    for i in 0..shls.len() {
+    for i in 0..nshl {
         let shl = shls.get(i);
-        let ang = shl.ang;
-        let atm = shl.atm;
-        let [up_raw, lo_raw] = uplo_raw[i];
         let [up_stp, lo_stp] = uplo_stp[i];
-        let nraw = lo_raw - up_raw;
         let nstp = lo_stp - up_stp;
-        let cmat_raw_part = if nraw != nstp {
-            let tmat = match form {
-                "car" => btrans::sph2car_tmat(ang),
-                "sph" => btrans::car2sph_tmat(ang),
-                _ => panic!("Unsupported form: {}", form),
-            };
-            let part = cmat_raw.slice(s![up_raw..lo_raw, ..]);
-            tmat.dot(&part)
-        } else {
-            cmat_raw.slice(s![up_raw..lo_raw, ..]).to_owned()
-        };
-        cmat_stp.slice_mut(s![up_stp..lo_stp, ..]).assign(&cmat_raw_part);
         atms_stp.extend(vec![shl.atm; nstp]);
         shls_stp.extend(vec![shl.shl; nstp]);
         syms_stp.extend(len2syms(nstp));
@@ -506,16 +500,13 @@ pub fn from_raw(
 ///
 /// # Parameters
 /// - `cmat_stp`: 指定形式的系数矩阵
-/// - `basis`: 基组信息
-/// - `form`: 当前轨道形式（"sph" 或 "car"）
+/// - `mole`: 分子信息，提供基组用于形式转换
+/// - `form`: 当前轨道形式（"sph" 或 "car"） sph->raw | car->raw
 ///
 /// # Returns
 /// 元组 (转换后的原始系数矩阵, 原子索引列表, 壳层索引列表, 轨道符号列表)
-pub fn into_raw(
-    cmat_stp: &Array2<f64>,
-    basis: &Basis,
-    form: &str,
-) -> (Array2<f64>, Vec<usize>, Vec<usize>, Vec<String>) {
+pub fn into_raw(cmat_stp: &Array2<f64>, mole: &Mole, form: &str) -> (Array2<f64>, Vec<usize>, Vec<usize>, Vec<String>) {
+    let basis = mole.basis();
     let shls = &basis.shls;
     let mut atms_raw = vec![];
     let mut shls_raw = vec![];

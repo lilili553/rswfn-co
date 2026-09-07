@@ -106,7 +106,7 @@ impl<'m> RHF<'m> {
         println!("开始计算");
         // let map_ato = self.mole.basis().map_ato();
         // let nato = map_ato.len("car");
-        let ints = RsInt::new(self.mole.atoms(), self.mole.basis());
+        let ints = RsInt::new(self.mole);
         let (mat1e, emat) = if self.use_lstm {
             println!("使用局部坐标系");
             let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
@@ -279,7 +279,7 @@ impl<'m> UHF<'m> {
         let dmat_b = Array2::zeros((nato, nato));
         let mut dmat = [dmat_a, dmat_b];
 
-        let rs_int = integ::RsInt::new(self.mole.atoms(), self.mole.basis());
+        let rs_int = integ::RsInt::new(self.mole);
         let [smat, tmat, vmat] = rs_int.mat1e([1, 1, 1], "car");
         let emat = rs_int.mat2e("car");
 

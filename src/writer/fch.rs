@@ -47,12 +47,13 @@ impl FchWriter {
     /// 生成fch文件内容字符串
     pub fn build(&self)->String {
         let mut text = String::new();
+        let mole = Mole::new(self.atoms.clone(), Some(self.basis.clone()), Some(self.coefs.clone()));
         let atoms=&self.atoms;
         let natm=atoms.len();
-        let nele=self.coefs.obt_eles(&self.basis);
+        let nele=mole.coefs().obt_eles(&mole);
         let syms=atoms.syms();
         let xyzs=atoms.xyzs();
-        let cmat=self.coefs.get_cmat("sph", &self.basis);
+        let cmat=mole.coefs().get_cmat("sph", &mole);
         let [nato,nobt]=cmat.shape().try_into().expect("获取分子轨道形状失败");
         // let nbas=self.basis.map_ato().len();
         let nbas=nato;
@@ -78,7 +79,7 @@ impl FchWriter {
 
         text.push_str("Translation vectors                        R   N=           0\n");
         // 基组信息
-        let (nshl,shl_types,shl_nbass,shl_atoms,pm_alps,pm_coes,sp_coes)=basis_info(&self.basis);
+        let (nshl,shl_types,shl_nbass,shl_atoms,pm_alps,pm_coes,sp_coes)=basis_info(&mole);
         let shl_nbass=shl_nbass.iter().map(|v|*v as isize).collect();
         let shl_atoms=shl_atoms.iter().map(|v|*v as isize).collect();
         text.push_str(&format!("Shell types                                I   N={:>12}\n",nshl));
@@ -120,7 +121,7 @@ impl FchWriter {
             text.push_str(&f2str(&coefs_b));
         }
 
-        let dmat=self.coefs.get_dmat("sph", &self.basis);
+        let dmat=mole.coefs().get_dmat("sph", &mole);
         let mut dvec=Vec::new();
         for i in 0..nato{
             for j in 0..i{
@@ -193,7 +194,8 @@ impl ShlInfo {
     }
 }
 
-fn basis_info(basis: &Basis) -> (usize, Vec<isize>, Vec<usize>, Vec<usize>, Vec<f64>, Vec<f64>, Vec<f64>) {
+fn basis_info(mole: &Mole) -> (usize, Vec<isize>, Vec<usize>, Vec<usize>, Vec<f64>, Vec<f64>, Vec<f64>) {
+    let basis = mole.basis();
     let mut shl_types = Vec::new();
     let mut shl_nbass = Vec::new();
     let mut shl_atoms = Vec::new();
