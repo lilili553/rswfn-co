@@ -102,7 +102,7 @@ impl<'m> Calculator<'m> {
     /// 根据密度矩阵计算一点处的电子密度及其梯度、Hessian
     pub fn mol_rho_dm(&self, grid: &[f64; 3], level: usize) -> GridVals {
         let ato_atms=self.mole.basis().atos().atms("car");
-        let dmat_car=self.mole.coefs().get_dmat("car", self.mole.basis());
+        let dmat_car=self.mole.coefs().get_dmat("car", self.mole);
         let ato_wfns = self.wfn_caler.ato_wfn(&grid, level);
         let mut mol_rho0 = 0.0;
         let mut mol_rho1 = [0.0; 3];
@@ -172,7 +172,7 @@ impl<'m> Calculator<'m> {
     // 计算所有原子轨道的电子密度
     /// 计算所有原子轨道的电子密度
     pub fn ato_rho(&self, grid: &[f64; 3], level: usize) -> Vec<GridVals> {
-        let pmat_car = self.mole.coefs().get_dmat("car", self.mole.basis());
+        let pmat_car = self.mole.coefs().get_dmat("car", self.mole);
         let nato = pmat_car.shape()[0];
         let ato_wfns = self.wfn_caler.ato_wfn(grid, level);
         let mut ato_rhos = vec![GridVals::non(); nato];

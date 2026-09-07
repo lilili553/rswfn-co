@@ -44,7 +44,7 @@ impl<'m> RSE<'m> {
         let mut dir_caler = atomprop::direction::Calculator::new(self.mole);
         let atoms = self.mole.atoms();
 
-        let ints = RsInt::new(self.mole.atoms(), self.mole.basis());
+        let ints = RsInt::new(self.mole);
         let mut stms = HashMap::new();
         let [smat, tmat, vmat] = if lcs {
             for atm in 0..atoms.len() {

@@ -148,7 +148,113 @@ pub fn sph2car_tmat(ang: usize) -> Array2<f64> {
     }
 }
 
-// 这个函数是错的！！
+/// 生成混合 car/sph 基组之间的系数变换矩阵。
+///
+/// 返回 `n_into × n_from` 的矩阵 `M`，满足 `cmat_into = M.dot(&cmat_from)`。
+///
+/// - 所有壳层类型不变：返回单位矩阵；
+/// - 只发生收缩（`car -> sph`，可能夹杂不变壳层）：用完整 `from_smat` 做全局
+///   度量修正投影 `M = (F^T S F)^{-1} F^T S`，与 `car2sph_fmat` 一致，能正确处理
+///   笛卡尔 d/f 中 s 污染分量与 s 轨道的耦合；
+/// - 只发生扩张（`sph -> car`，可能夹杂不变壳层）：返回嵌入矩阵的转置 `F^T`
+///   （`sph -> car` 即 `U`）；
+/// - 同时出现收缩和扩张：回退到逐壳层处理。
+pub fn get_fmat(
+    from_smat: &Array2<f64>,
+    from_forms: &Vec<&str>,
+    into_forms: &Vec<&str>,
+    angs: &Vec<usize>,
+) -> Array2<f64> {
+    assert_eq!(from_forms.len(), into_forms.len());
+    assert_eq!(from_forms.len(), angs.len());
+
+    let mut n_from = 0;
+    let mut n_into = 0;
+    for (i, ang) in angs.iter().enumerate() {
+        n_from += ang2syms(*ang, from_forms[i]).len();
+        n_into += ang2syms(*ang, into_forms[i]).len();
+    }
+
+    let has_contract = (0..angs.len()).any(|i| from_forms[i] == "car" && into_forms[i] == "sph");
+    let has_expand = (0..angs.len()).any(|i| from_forms[i] == "sph" && into_forms[i] == "car");
+
+    // 类型完全不变
+    if !has_contract && !has_expand {
+        return Array2::eye(n_from);
+    }
+
+    // 构建 into -> from 的嵌入矩阵 F (n_from × n_into)
+    let mut fmat_embed = Array2::zeros((n_from, n_into));
+    let mut i_from = 0;
+    let mut i_into = 0;
+    for (i, ang) in angs.iter().enumerate() {
+        let from_form = from_forms[i];
+        let into_form = into_forms[i];
+        let nf = ang2syms(*ang, from_form).len();
+        let ni = ang2syms(*ang, into_form).len();
+
+        let block = if from_form == into_form {
+            Array2::eye(nf)
+        } else if from_form == "car" && into_form == "sph" {
+            sph2car_tmat(*ang) // U: car = U * sph
+        } else if from_form == "sph" && into_form == "car" {
+            car2sph_tmat(*ang) // U^T: sph = U^T * car
+        } else {
+            panic!("未知的轨道形式: {} -> {}", from_form, into_form);
+        };
+
+        fmat_embed
+            .slice_mut(s![i_from..i_from + nf, i_into..i_into + ni])
+            .assign(&block);
+        i_from += nf;
+        i_into += ni;
+    }
+
+    // 纯收缩：全局度量修正投影（等价于 car2sph_fmat）
+    if has_contract && !has_expand {
+        let metric = fmat_embed.t().dot(from_smat).dot(&fmat_embed);
+        let metric_inv = maths::inv(&metric);
+        return metric_inv.dot(&fmat_embed.t()).dot(from_smat);
+    }
+
+    // 纯扩张：直接使用嵌入转置
+    if has_expand && !has_contract {
+        return fmat_embed.t().to_owned();
+    }
+
+    // 混合收缩+扩张：逐壳层处理（近似）
+    let mut fmat = Array2::zeros((n_into, n_from));
+    let mut i_from = 0;
+    let mut i_into = 0;
+    for (i, ang) in angs.iter().enumerate() {
+        let from_form = from_forms[i];
+        let into_form = into_forms[i];
+        let nf = ang2syms(*ang, from_form).len();
+        let ni = ang2syms(*ang, into_form).len();
+
+        let block = if from_form == into_form {
+            Array2::eye(nf)
+        } else if from_form == "car" && into_form == "sph" {
+            let u = sph2car_tmat(*ang);
+            let sblk = from_smat.slice(s![i_from..i_from + nf, i_from..i_from + nf]).to_owned();
+            let metric = u.t().dot(&sblk).dot(&u);
+            let metric_inv = maths::inv(&metric);
+            metric_inv.dot(&u.t()).dot(&sblk)
+        } else if from_form == "sph" && into_form == "car" {
+            sph2car_tmat(*ang)
+        } else {
+            panic!("未知的轨道形式: {} -> {}", from_form, into_form);
+        };
+
+        fmat.slice_mut(s![i_into..i_into + ni, i_from..i_from + nf])
+            .assign(&block);
+        i_from += nf;
+        i_into += ni;
+    }
+    fmat
+}
+
+// 这个函数不能作用于分子轨道系数，能作用于重叠积分
 pub fn car2sph_tmat(ang: usize) -> Array2<f64> {
     let tmat = sph2car_tmat(ang);
     tmat.t().to_owned()

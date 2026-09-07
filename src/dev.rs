@@ -223,14 +223,15 @@ pub fn test_order() {
 }
 
 fn test8() {
-    let mole = Mole::from_file(r"E:\code\rswfn\moles\C2H4.out");
-    let forms = vec!["raw", "car", "sph"];
-    for form in forms {
-        let dmat = mole.coefs().get_dmat(form, mole.basis());
-        let smat = mole.basis().get_smat(form, mole.atoms());
-        let qmat = dmat * smat;
-        let sum = qmat.sum();
-        println!("sum:{}", sum);
+    let nums = [3, 6, 10, 15];
+    for num in nums {
+        let tmat = mocv::get_tmat_car(num, &Array2::eye(num));
+        println!("num:{} tmat:\n{}", num, tmat);
+    }
+    let numt = [3, 5, 7, 9];
+    for num in numt {
+        let tmat = mocv::get_tmat_sph(num, &Array2::eye(num));
+        println!("num:{} tmat:\n{}", num, tmat);
     }
 }
 

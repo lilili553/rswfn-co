@@ -18,13 +18,38 @@ pub fn get_tmat(num: usize, lmat: &Array2<f64>) -> Array2<f64> {
 }
 
 /// 获取球谐函数形式的变换矩阵
+///
+/// 球谐基与笛卡尔基通过 U (DMAT/FMAT/GMAT) 相关联：φ = χ · U，且 U 的列相对
+/// 笛卡尔角度重叠 S 正交归一（Uᵀ S U = I），而非相对欧氏内积正交（Uᵀ U ≠ I）。
+/// 设笛卡尔旋转矩阵 R_car = get_tmat_car(..)ᵀ（满足 C^g = R_car C^l），则
+/// 球谐基下的旋转矩阵为
+///
+///   R_sph = Uᵀ S R_car U
+///
+/// 对应本函数的返回（T = R_sphᵀ，满足 C^g = Tᵀ C^l）：
+///
+///   T_sph = R_sphᵀ = Uᵀ · get_tmat_car(..) · S · U
+///
+/// 当无旋转（R_car = I）时，T_sph = Uᵀ S U = I，与局部系==全局系的物理意义一致。
 pub fn get_tmat_sph(num: usize, lmat: &Array2<f64>) -> Array2<f64> {
     match num {
         01 => tmat_s(lmat),
         03 => tmat_p(lmat),
-        05 => btrans::DMAT.t().dot(&get_tmat_car(06, lmat)).dot(&*btrans::DMAT),
-        07 => btrans::FMAT.t().dot(&get_tmat_car(10, lmat)).dot(&*btrans::FMAT),
-        09 => btrans::GMAT.t().dot(&get_tmat_car(15, lmat)).dot(&*btrans::GMAT),
+        05 => btrans::DMAT
+            .t()
+            .dot(&get_tmat_car(06, lmat))
+            .dot(&sang_d())
+            .dot(&*btrans::DMAT),
+        07 => btrans::FMAT
+            .t()
+            .dot(&get_tmat_car(10, lmat))
+            .dot(&sang_f())
+            .dot(&*btrans::FMAT),
+        09 => btrans::GMAT
+            .t()
+            .dot(&get_tmat_car(15, lmat))
+            .dot(&sang_g())
+            .dot(&*btrans::GMAT),
         _ => panic!("不支持的类型:{}", num),
     }
 }
@@ -497,4 +522,50 @@ pub fn nmat_f()->Array2<f64>{
 pub fn nmat_g()->Array2<f64>{
     let lmns=btrans::CAR_G_LMNS.to_vec();
     get_nmat(&lmns)
+}
+
+/// 计算归一化笛卡尔基函数在同一壳层内的角度重叠矩阵 S
+///
+/// 对同一角动量 l 的壳层，所有函数共用指数 α，归一化后的笛卡尔函数
+/// χ_i = N_i x^{li} y^{mi} z^{ni} e^{-αr²} 之间的重叠
+///
+///   S[i][j] = (li+lj-1)!!(mi+mj-1)!!(ni+nj-1)!! / sqrt(fac_i·fac_j)
+///
+/// 只与角量子数有关，与 α 无关，是纯角度量。
+fn get_sang(lmns: &[[usize; 3]]) -> Array2<f64> {
+    let n = lmns.len();
+    let mut s = Array2::<f64>::zeros((n, n));
+    for i in 0..n {
+        let [li, mi, ni] = lmns[i];
+        let fac_i = FACS[li] * FACS[mi] * FACS[ni];
+        for j in 0..n {
+            let [lj, mj, nj] = lmns[j];
+            let lx = li + lj;
+            let my = mi + mj;
+            let nz = ni + nj;
+            // 任意一个方向为奇次幂时，高斯积分恒为零
+            if lx % 2 == 1 || my % 2 == 1 || nz % 2 == 1 {
+                continue;
+            }
+            let num = FACS[lx / 2] * FACS[my / 2] * FACS[nz / 2];
+            let fac_j = FACS[lj] * FACS[mj] * FACS[nj];
+            s[(i, j)] = num / (fac_i * fac_j).sqrt();
+        }
+    }
+    s
+}
+
+/// 归一化笛卡尔 d 基的角度重叠矩阵
+fn sang_d() -> Array2<f64> {
+    get_sang(&btrans::CAR_D_LMNS)
+}
+
+/// 归一化笛卡尔 f 基的角度重叠矩阵
+fn sang_f() -> Array2<f64> {
+    get_sang(&btrans::CAR_F_LMNS)
+}
+
+/// 归一化笛卡尔 g 基的角度重叠矩阵
+fn sang_g() -> Array2<f64> {
+    get_sang(&btrans::CAR_G_LMNS)
 }

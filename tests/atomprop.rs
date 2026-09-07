@@ -119,4 +119,21 @@ fn test7() {
     assert!(allclose(res, ans, 1e-3));
 }
 
-// #[test]
+#[test]
+/// 测试三种轨道形式（raw/car/sph）计算的总电子数一致
+fn test8() {
+    let mole = Mole::from_file(r"E:\code\rswfn\moles\C2H4.out");
+    // C2H4 为 6D 笛卡尔基组，car/sph 转换非平凡，适合验证总电子数守恒
+    let sums: Vec<f64> = ["raw", "car", "sph"]
+        .into_iter()
+        .map(|form| {
+            let dmat = mole.coefs().get_dmat(form, &mole);
+            let smat = mole.basis().get_smat(form, &mole);
+            (dmat * smat).sum()
+        })
+        .collect();
+    println!("sums:{:?}", sums);
+    // C2H4 共 8α+8β = 16 个电子
+    assert!(allclose(sums.clone(), vec![16.0, 16.0, 16.0], 1e-3));
+    assert!((sums[0] - sums[2]).abs() < 1e-3);
+}
