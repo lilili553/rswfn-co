@@ -548,3 +548,34 @@ pub const OXIS: &[&[isize]] = &[
     &[],
     &[],
 ];
+
+// 获取元素的α电子数和β电子数
+pub fn get_ab_nele(nuc: usize) -> [usize; 2] {
+    let eles = ELES[nuc - 1];
+    let mut nela = 0;
+    let mut nelb = 0;
+    for (i, &nele) in eles.iter().enumerate() {
+        if nele == 0 {
+            continue;
+        }
+        if nele == 1 {
+            nela += 1;
+        }
+        if nele == 2 {
+            nela += 1;
+            nelb += 1;
+        }
+    }
+    [nela, nelb]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_ab_nele_carbon() {
+        // 碳原子的α电子数和β电子数应为[4, 2]
+        assert_eq!(get_ab_nele(6), [4, 2]);
+    }
+}
