@@ -9,10 +9,10 @@ use ndarray::Array2;
 /// 根据壳层维度自动选择合适的变换矩阵
 pub fn get_tmat(num: usize, lmat: &Array2<f64>) -> Array2<f64> {
     if [1, 3, 5, 7, 9].contains(&num) {
-        return get_tmat_car(num, lmat);
+        return get_tmat_sph(num, lmat);
     }
     if [1, 3, 6, 10, 15].contains(&num) {
-        return get_tmat_sph(num, lmat);
+        return get_tmat_car(num, lmat);
     }
     panic!("不支持的类型:{}", num)
 }

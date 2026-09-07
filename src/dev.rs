@@ -222,10 +222,22 @@ pub fn test_order() {
     }
 }
 
+fn test8() {
+    let mole = Mole::from_file(r"E:\code\rswfn\moles\C2H4.out");
+    let forms = vec!["raw", "car", "sph"];
+    for form in forms {
+        let dmat = mole.coefs().get_dmat(form, mole.basis());
+        let smat = mole.basis().get_smat(form, mole.atoms());
+        let qmat = dmat * smat;
+        let sum = qmat.sum();
+        println!("sum:{}", sum);
+    }
+}
+
 /// 运行所有测试的入口函数
 pub fn test() {
     loger::init_log();
     let t0 = std::time::Instant::now();
-    test_order();
+    test8();
     println!("消耗时间 time: {:?}", t0.elapsed());
 }
