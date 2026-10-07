@@ -12,6 +12,7 @@ use crate::gridprop::{CubeGrid, density, potential, topolog};
 use crate::moleprop;
 use crate::orbtprop;
 use crate::reader::{FchReader, GjfReader, LogReader};
+use crate::tools::log::Tool;
 use crate::writer::{CubWriter, DmoWriter, GjfWriter, Writer, XyzWriter};
 use crate::{qmcalc, utils};
 
@@ -55,6 +56,16 @@ enum Commands {
     Trans { input: PathBuf, output: PathBuf },
     /// DHMO 计算
     Dmo { input: PathBuf, output: Option<PathBuf> },
+
+    /// 提取支持信息（Supporting Information），汇总能量、频率与结构
+    Si {
+        /// 输入 Gaussian 输出文件路径（.log/.out），可指定多个
+        inputs: Vec<PathBuf>,
+        /// 输出文本文件路径（可选，默认打印到屏幕）
+        #[arg(short = 'o', long = "output")]
+        output: Option<PathBuf>,
+    },
+
     /// 开发时测试
     Dev,
 }
@@ -1057,6 +1068,34 @@ pub fn main() {
             qmcalc::dhmo::output(&from, dest);
             println!("DHMO计算完成 >_< ");
         }
+        // ==================== 提取支持信息 ====================
+        Commands::Si { inputs, output } => {
+            if inputs.is_empty() {
+                panic!("至少需要指定一个输入文件");
+            }
+            let paths: Vec<String> = inputs
+                .iter()
+                .map(|path| {
+                    absolute(path)
+                        .expect("无法获取文件绝对路径")
+                        .to_str()
+                        .expect("路径转字符串失败")
+                        .to_owned()
+                })
+                .collect();
+            let tool = Tool::new();
+            let text = tool.get_SI(&paths);
+            match output {
+                Some(path) => {
+                    let dest = absolute(path).expect("输出文件路径转换失败");
+                    let dest_path = dest.to_str().expect("路径转字符串失败");
+                    std::fs::write(dest_path, text).expect("写入支持信息文件失败");
+                    println!("支持信息已导出到: {}", dest_path);
+                }
+                None => print!("{}", text),
+            }
+        }
+
         Commands::Dev => {
             dev::test();
         }

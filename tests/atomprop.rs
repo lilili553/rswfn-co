@@ -137,3 +137,15 @@ fn test8() {
     assert!(allclose(sums.clone(), vec![16.0, 16.0, 16.0], 1e-3));
     assert!((sums[0] - sums[2]).abs() < 1e-3);
 }
+
+#[test]
+/// 测试 MOCV 方法在笛卡尔型（6D）输入基组下的 π 电子布居
+fn test9() {
+    let mole = Mole::from_file(r"E:\code\rswfn\moles\C2H4.out");
+    // C2H4.out 的 raw 系数为笛卡尔形式，验证 MOCV 在非球谐输入下仍能正确工作
+    let caler = atomprop::charge::Calculator::new(&mole);
+    let (_stms, _atos, vals) = caler.pi_mocv("mulliken").unwrap();
+    let ans = vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+    println!("pi_mocv(car):{:?}", vals);
+    assert!(allclose(vals, ans, 1e-4));
+}

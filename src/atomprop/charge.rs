@@ -227,7 +227,7 @@ impl<'m> Calculator<'m> {
         let cmat_mocv = obt_caler.mocv(stms, atos);
 
         let mut mole_mocv = self.mole.clone();
-        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("sph", &cmat_mocv, self.mole);
         let ele_caler = Calculator::new(&mole_mocv);
         match ctype {
             "mulliken" => ele_caler.mulliken(),
@@ -273,7 +273,7 @@ impl<'m> Calculator<'m> {
         let dest = MocvDest::PiProperty;
         let (stms, atos, cmat_mocv) = obt_caler.pi_mocv(&dest);
         let mut mole_mocv = self.mole.clone();
-        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("sph", &cmat_mocv, self.mole);
         let caler = Calculator::new(&mole_mocv);
         let eles = match ctype {
             "mulliken" => caler.mulliken(),
@@ -286,18 +286,18 @@ impl<'m> Calculator<'m> {
 
     pub fn pi_mocv_v2(&self, ctype: &str) -> Result<(HashMap<usize, Stm>, Vec<usize>, Vec<f64>), String> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
-        let cmat = self.mole.coefs().get_cmat("raw", self.mole);
+        let cmat = self.mole.coefs().get_cmat("sph", self.mole);
         let eles = self.eles(ctype);
         let dest = MocvDest::PiProperty;
         let (stms, atos, cmat_pi) = obt_caler.pi_mocv(&dest);
         let mut mole_pi = self.mole.clone();
-        mole_pi.coefs.as_mut().unwrap().set_cmat("raw", &cmat_pi, self.mole);
+        mole_pi.coefs.as_mut().unwrap().set_cmat("sph", &cmat_pi, self.mole);
         let caler_pi = Calculator::new(&mole_pi);
         let eles_pp = caler_pi.eles(ctype);
 
         let cmat_si = cmat - &cmat_pi;
         let mut mole_si = self.mole.clone();
-        mole_si.coefs.as_mut().unwrap().set_cmat("raw", &cmat_si, self.mole);
+        mole_si.coefs.as_mut().unwrap().set_cmat("sph", &cmat_si, self.mole);
         let caler_si = Calculator::new(&mole_si);
         let eles_ss = caler_si.eles(ctype);
 

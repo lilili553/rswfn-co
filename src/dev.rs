@@ -32,7 +32,7 @@ use crate::{funcs, loger};
 
 /// 测试读取 log 文件并解析分子信息
 pub fn test_reader() {
-    let path = r"E:\code\articles\MOCV\moles\bond-order-decom\CoUCo.log";
+    let path = r"C:\Users\11032\Desktop\gfile\errors\CO-BP86-opt-1.fchk";
     let mole = Mole::from_file(path);
     println!("mole: {:?}", mole);
 }
@@ -85,7 +85,7 @@ pub fn test_order() {
     // 两组要保留的轨道类型：π(PX) 和 δ(D-2)
     let syml: [&[&str]; 2] = [&["PX"], &["D-2"]];
 
-    let ato_syms = mole.basis().atos().syms("raw");
+    let ato_syms = mole.basis().atos().syms("sph");
 
     // MOCV：data[i, j] 第 i 个朝向、第 j 种轨道类型下的 Mayer 键级 omat[0,2]
     // POCV-z：data_pocv[i] 方向取局部坐标系 x 轴（绕全局 z 轴，应与 MOCV-PX 逐角度相等）
@@ -223,14 +223,15 @@ pub fn test_order() {
 }
 
 fn test8() {
+    let lmat = Array2::eye(3);
     let nums = [3, 6, 10, 15];
     for num in nums {
-        let tmat = mocv::get_tmat_car(num, &Array2::eye(num));
+        let tmat = mocv::get_tmat_car(num, &lmat);
         println!("num:{} tmat:\n{}", num, tmat);
     }
     let numt = [3, 5, 7, 9];
     for num in numt {
-        let tmat = mocv::get_tmat_sph(num, &Array2::eye(num));
+        let tmat = mocv::get_tmat_sph(num, &lmat);
         println!("num:{} tmat:\n{}", num, tmat);
     }
 }
@@ -239,6 +240,6 @@ fn test8() {
 pub fn test() {
     loger::init_log();
     let t0 = std::time::Instant::now();
-    test8();
+    test_reader();
     println!("消耗时间 time: {:?}", t0.elapsed());
 }

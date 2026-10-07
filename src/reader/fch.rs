@@ -11,6 +11,7 @@ use crate::reader::{Reader, read_lines, shl_basis, shl_forms};
 
 static SHL2SYM: LazyLock<HashMap<isize, Vec<&str>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
+    map.insert(-4, btrans::SPH_G_SYMS.to_vec());
     map.insert(-3, btrans::SPH_F_SYMS.to_vec());
     map.insert(-2, btrans::SPH_D_SYMS.to_vec());
     map.insert(-1, vec!["S", "PX", "PY", "PZ"]);
@@ -18,6 +19,7 @@ static SHL2SYM: LazyLock<HashMap<isize, Vec<&str>>> = LazyLock::new(|| {
     map.insert(1, vec!["PX", "PY", "PZ"]);
     map.insert(2, btrans::CAR_D_SYMS.to_vec());
     map.insert(3, btrans::CAR_F_SYMS.to_vec());
+    map.insert(4, btrans::CAR_G_SYMS.to_vec());
     map
 });
 

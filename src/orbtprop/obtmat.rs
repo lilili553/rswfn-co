@@ -132,16 +132,13 @@ impl<'m> Calculator<'m> {
     /// * `stms` - 原子局部坐标系
     /// * `atos` - 原子轨道索引
     pub fn mocv(&self, stms: &HashMap<usize, Stm>, atos: &Vec<usize>) -> Array2<f64> {
-        let ato_syms = self.mole.basis().atos().syms("raw");
-        let ato_atms = self.mole.basis().atos().atms("raw");
-        let nato = ato_syms.len();
-        if atos.len() == 0 {
-            log::warn!("mocv:原子轨道长度为0");
-            return Array2::zeros((nato, nato));
-        }
-        let cmat_raw = self.mole.coefs().get_cmat("raw", self.mole);
+        let cmat_raw = self.mole.coefs().get_cmat("sph", self.mole);
         let nato = cmat_raw.nrows();
         let nobt = cmat_raw.ncols();
+        if atos.len() == 0 {
+            log::warn!("mocv:原子轨道长度为0");
+            return Array2::zeros((nato, nobt));
+        }
         let mut cmat_mocv = Array2::zeros([nato, nobt]);
 
         let mut ato_keeps = vec![0; nato];
@@ -150,7 +147,7 @@ impl<'m> Calculator<'m> {
         }
 
         let shls = &self.mole.basis().shls;
-        let uplo = shls.uplo("raw");
+        let uplo = shls.uplo("sph");
 
         assert_eq!(shls.len(), uplo.len());
         for i in 0..shls.len() {
@@ -296,10 +293,11 @@ impl<'m> Calculator<'m> {
 /// 使用 MOCV 方法将全局坐标系系数映射到局部坐标系再映射回来
 pub fn mocv(L: &Array2<f64>, rcoefs: &Array2<f64>, keeps: &Array2<f64>) -> Array2<f64> {
     let nrow = rcoefs.nrows();
-    let Mo = if [1, 3, 5, 7, 9].contains(&nrow) {
+    let Mo = if [1, 3, 5, 7, 9, 11].contains(&nrow) {
         mocv::get_tmat_sph(nrow, L)
     } else {
-        mocv::get_tmat_car(nrow, L)
+        // mocv::get_tmat_car(nrow, L)
+        panic!("只能使用球谐轨道系数")
     };
     // let Mi = mocv::get_tmat_sph(nrow, L);
     let Mt = Mo.t().to_owned();
@@ -314,8 +312,8 @@ pub fn mocv(L: &Array2<f64>, rcoefs: &Array2<f64>, keeps: &Array2<f64>) -> Array
 /// 根据计算目标选择用于 MOCV 的原子轨道索引
 pub fn mocv_atos(mole: &Mole, dest: &MocvDest) -> Vec<usize> {
     let mut atos = vec![];
-    let ato_syms = mole.basis().atos().syms("raw");
-    let ato_atms = mole.basis().atos().atms("raw");
+    let ato_syms = mole.basis().atos().syms("sph");
+    let ato_atms = mole.basis().atos().atms("sph");
 
     let mut atm_syms = HashMap::new(); // 每个原子保留的符号
     let natm = mole.atoms.len();
@@ -325,7 +323,7 @@ pub fn mocv_atos(mole: &Mole, dest: &MocvDest) -> Vec<usize> {
         atm_syms.insert(i, syms);
     }
     let nato = ato_syms.len();
-    let ato_locs = mole.basis().atos().locs("raw");
+    let ato_locs = mole.basis().atos().locs("sph");
     for i in 0..nato {
         let atm = ato_atms[i];
         let sym = &ato_syms[i];
@@ -374,9 +372,9 @@ fn mocv_syms(dest: &MocvDest, geom: usize) -> Vec<String> {
         (MocvDest::PiProperty, 0) => {
             vec![
                 "PX", // P轨道
-                "XZ", "XY", // 笛卡尔D轨道
+                // "XZ", "XY", // 笛卡尔D轨道
                 "D+1", "D-2", // 球谐D轨道
-                "XXY", "XXZ", "XYY", "XYZ", "XZZ", // 笛卡尔F轨道
+                // "XXY", "XXZ", "XYY", "XYZ", "XZZ", // 笛卡尔F轨道
                 "F-2", "F+1", "F+3", // 球谐F轨道
             ] // 平面分子电子布局
         }
@@ -400,9 +398,9 @@ fn mocv_syms(dest: &MocvDest, geom: usize) -> Vec<String> {
         (MocvDest::RoundOrder, _) => {
             vec![
                 "PX", // P轨道
-                "XZ", "XY", // 笛卡尔D轨道
+                // "XZ", "XY", // 笛卡尔D轨道
                 "D+1", "D-2", // 球谐D轨道
-                "XXY", "XXZ", "XYY", "XYZ", "XZZ", // 笛卡尔F轨道
+                // "XXY", "XXZ", "XYY", "XYZ", "XZZ", // 笛卡尔F轨道
                 "F-2", "F+1", "F+3", // 球谐F轨道
             ] // 环轴键级
         }

@@ -64,7 +64,7 @@ impl<'m> Calculator<'m> {
         let dest = orbtprop::obtmat::MocvDest::PiProperty;
         let (_, _, cmat_mocv) = mole_caler.pi_mocv(&dest);
         let mut mole_pocv = self.mole.clone();
-        mole_pocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
+        mole_pocv.coefs.as_mut().unwrap().set_cmat("sph", &cmat_mocv, self.mole);
         Ok(mole_pocv)
     }
 }

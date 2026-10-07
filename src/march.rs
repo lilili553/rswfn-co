@@ -120,7 +120,12 @@ impl Cube {
 }
 
 // 将正的和负的融合到一块
-pub fn value_merge(pverts: &Vec<[f64; 3]>, pfaces: &Vec<[usize; 3]>, nverts: &Vec<[f64; 3]>, nfaces: &Vec<[usize; 3]>) -> (Vec<[f64; 3]>, Vec<[usize; 3]>, Vec<isize>) {
+pub fn value_merge(
+    pverts: &Vec<[f64; 3]>,
+    pfaces: &Vec<[usize; 3]>,
+    nverts: &Vec<[f64; 3]>,
+    nfaces: &Vec<[usize; 3]>,
+) -> (Vec<[f64; 3]>, Vec<[usize; 3]>, Vec<isize>) {
     let pverts_count = pverts.len();
     let nverts_count = nverts.len();
     let pfaces_count = pfaces.len();
@@ -140,7 +145,11 @@ pub fn value_merge(pverts: &Vec<[f64; 3]>, pfaces: &Vec<[usize; 3]>, nverts: &Ve
     faces.extend_from_slice(pfaces);
 
     for i in 0..nfaces_count {
-        let new_face = [nfaces[i][0] + pverts_count as usize, nfaces[i][1] + pverts_count as usize, nfaces[i][2] + pverts_count as usize];
+        let new_face = [
+            nfaces[i][0] + pverts_count as usize,
+            nfaces[i][1] + pverts_count as usize,
+            nfaces[i][2] + pverts_count as usize,
+        ];
         faces.push(new_face);
     }
 
@@ -305,7 +314,14 @@ where
         .par_iter()
         .map(|(key, _cube)| {
             let (ix, iy, iz) = key.clone();
-            let keys = [('x', ix + 0, iy, iz), ('x', ix + 1, iy, iz), ('y', ix, iy + 0, iz), ('y', ix, iy + 1, iz), ('z', ix, iy, iz + 0), ('z', ix, iy, iz + 1)];
+            let keys = [
+                ('x', ix + 0, iy, iz),
+                ('x', ix + 1, iy, iz),
+                ('y', ix, iy + 0, iz),
+                ('y', ix, iy + 1, iz),
+                ('z', ix, iy, iz + 0),
+                ('z', ix, iy, iz + 1),
+            ];
             for key in keys.iter() {
                 // let vals = rect_vals.get(key).expect("不存在这样的正方形面");
                 let vals = match rect_vals.get(key) {
@@ -526,7 +542,16 @@ pub fn voxel2verts(voxel: &Array4<f64>, isov: f64) -> (Vec<[f64; 3]>, Vec<[f64; 
     (pverts, nverts)
 }
 
-static DIDX: [[usize; 3]; 8] = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]];
+static DIDX: [[usize; 3]; 8] = [
+    [0, 0, 0],
+    [1, 0, 0],
+    [1, 1, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+    [1, 0, 1],
+    [1, 1, 1],
+    [0, 1, 1],
+];
 // 获取一个点周围的点
 fn get_around_v1(voxel: &Array4<f64>, i: usize, j: usize, k: usize) -> ([[f64; 3]; 8], [f64; 8]) {
     let mut xyzs = [[0.0; 3]; 8];
@@ -544,17 +569,33 @@ fn get_around_v1(voxel: &Array4<f64>, i: usize, j: usize, k: usize) -> ([[f64; 3
     (xyzs, vals)
 }
 
-static EDGES: [[isize; 2]; 12] = [[0, 1], [1, 2], [2, 3], [0, 3], [1, 5], [2, 6], [3, 7], [0, 4], [4, 5], [5, 6], [6, 7], [7, 4]];
+static EDGES: [[isize; 2]; 12] = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [0, 3],
+    [1, 5],
+    [2, 6],
+    [3, 7],
+    [0, 4],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+    [7, 4],
+];
 // 获取等值面与小盒子的交点
 fn get_boxverts(key: usize, xyzs: &[[f64; 3]; 8], vals: &[f64; 8], isov: f64) -> Vec<[f64; 3]> {
     let mut verts: Vec<[f64; 3]> = Vec::new();
-    let nface = MARCH[key].len() / 3; // 面的数量，每个面3个顶点
-    for f in 0..nface {
-        let face = MARCH[key][f * 3..(f + 1) * 3].to_vec();
-        for p in 0..3 {
-            let e = face[p];
-            let a = EDGES[e as usize][0];
-            let b = EDGES[e as usize][1];
+    let row = &MARCH[key]; // 每 3 个棱号一个三角形，不足的位置用 -1 补齐
+    for f in (0..row.len()).step_by(3) {
+        let e0 = row[f];
+        if e0 < 0 {
+            break; // -1 表示该 case 的三角形已结束
+        }
+        for e in [e0, row[f + 1], row[f + 2]] {
+            let e = e as usize;
+            let a = EDGES[e][0];
+            let b = EDGES[e][1];
             let pa = xyzs[a as usize];
             let pb = xyzs[b as usize];
             let va = vals[a as usize];

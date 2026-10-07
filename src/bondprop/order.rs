@@ -101,7 +101,7 @@ impl<'m> Calculator<'m> {
         let obt_caler = orbtprop::obtmat::Calculator::new(self.mole);
         let cmat_mocv = obt_caler.mocv(stms, atos);
         let mut mole_mocv = self.mole.clone();
-        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("sph", &cmat_mocv, self.mole);
         let caler = Calculator::new(&mole_mocv);
         caler.order(otype)
     }
@@ -127,7 +127,7 @@ impl<'m> Calculator<'m> {
         let dest = MocvDest::PiProperty;
         let (stms, atos, cmat_mocv) = obt_caler.pi_mocv(&dest);
         let mut mole_mocv = self.mole.clone();
-        mole_mocv.coefs.as_mut().unwrap().set_cmat("raw", &cmat_mocv, self.mole);
+        mole_mocv.coefs.as_mut().unwrap().set_cmat("sph", &cmat_mocv, self.mole);
         let caler = Calculator::new(&mole_mocv);
         let mut omat = caler.order(otype);
         omat = omat.abs().sqrt(); // 取绝对值再开根号

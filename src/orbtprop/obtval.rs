@@ -56,8 +56,8 @@ impl<'m> Calculator<'m> {
         caler.atms = self.atms;
         let dest = MocvDest::PiProperty;
         let (_, _, cmat_p) = caler.pi_mocv(&dest);
-        let cmat = self.mole.coefs().get_cmat("raw", self.mole);
-        let smat = self.mole.basis().get_smat("raw", self.mole);
+        let cmat = self.mole.coefs().get_cmat("sph", self.mole);
+        let smat = self.mole.basis().get_smat("sph", self.mole);
         let k = if self.mole.is_open() { 1.0 } else { 2.0 };
         let cmat_s = cmat - &cmat_p;
         let nobt = cmat.ncols();

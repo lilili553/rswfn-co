@@ -1,3 +1,5 @@
+// 原子半径: https://chemistry-europe.onlinelibrary.wiley.com/doi/full/10.1002/chem.200800987
+
 use crate::datas::consts::BOHR;
 use cached::proc_macro::cached;
 use std::sync::LazyLock;
