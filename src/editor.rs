@@ -1,5 +1,5 @@
 // 编辑分子结构，改变结构后的波函数信息肯定就没用了，因此只需要返回一个只包含结构的分子
-use crate::base::{Atoms, Mole};
+use crate::base::{Atoms, Mole, Vec3};
 use ndarray::Array2;
 
 /// 分子结构编辑器，提供键的旋转和伸缩等几何操作
@@ -39,12 +39,89 @@ impl<'m> Editor<'m> {
         searched
     }
 
-    /// 旋转一根化学键，返回旋转后的新分子
+    /// 修改键长
     /// - a1: 第一个原子索引
     /// - a2: 第二个原子索引
-    /// - angle: 旋转角度
+    /// - value: 键长
+    /// - stype: 伸缩类型（0:移动基团1, 1:移动基团2, 2:两个基团都移动）
+    pub fn set_bl_by(&self, a1: usize, a2: usize, value: f64, stype: usize) -> Mole {
+        let mut xyzs = self.mole.atoms().xyzs().clone();
+        let g1 = self.get_group(a1, &vec![a2]);
+        let g2 = self.get_group(a2, &vec![a1]);
+        let [len1, len2] = match stype {
+            0 => [-value, 0.0],
+            1 => [0.0, value],
+            2 => [-value / 2.0, value / 2.0],
+            _ => panic!("不支持"),
+        };
+        let axis = self.mole.atoms().vec(a1 as usize, a2 as usize).normalize();
+        let [dx, dy, dz] = axis.into_arr();
+        let lens = [len1, len2];
+        let gs = [g1, g2];
+        for i in 0..2 {
+            for atm in gs[i].iter() {
+                xyzs[*atm][0] += dx * lens[i];
+                xyzs[*atm][1] += dy * lens[i];
+                xyzs[*atm][2] += dz * lens[i];
+            }
+        }
+        let mut mole = Mole::new(self.mole.atoms.clone(), None, None);
+        let atms = self.mole.atoms().nucs();
+        let crgs = self.mole.atoms().crgs();
+        let stms = self.mole.atoms().stms().clone();
+        mole.atoms = Atoms::new(atms, &xyzs, crgs);
+        mole
+    }
+
+    /// 修改键角
+    /// - a1: 第一个原子索引
+    /// - a2: 第二个原子索引（键角顶点）
+    /// - a3: 第三个原子索引
+    /// - value: 新的键角（弧度）
+    /// - btype: 旋转类型（0:旋转基团1, 1:旋转基团3, 2:两个基团都旋转）
+    pub fn set_ba_by(&self, a1: usize, a2: usize, a3: usize, value: f64, btype: usize) -> Mole {
+        let mut xyzs = self.mole.atoms().xyzs().clone();
+        let g1 = self.get_group(a1, &vec![a2]);
+        let g3 = self.get_group(a3, &vec![a2]);
+        // 旋转轴取 a1-a2-a3 所在平面的法向量，旋转中心为顶点 a2
+        let v21 = self.mole.atoms().vec(a2, a1);
+        let v23 = self.mole.atoms().vec(a2, a3);
+        let axis = v21.cross(&v23).normalize();
+        let now_ang = self.mole.atoms().ang(a1, a2, a3);
+        let del_ang = value - now_ang;
+        // 基团1绕轴负向旋转、基团3绕轴正向旋转都会增大键角
+        let [ang1, ang3] = match btype {
+            0 => [-del_ang, 0.0],
+            1 => [0.0, del_ang],
+            2 => [-del_ang / 2.0, del_ang / 2.0],
+            _ => panic!("不支持"),
+        };
+        let angs = [ang1, ang3];
+        let gs = [g1, g3];
+        let cent = Vec3::from_arr(xyzs[a2]);
+        for i in 0..2 {
+            for atm in gs[i].iter() {
+                // 环等结构中两个基团可能重叠，重叠原子不旋转，避免被旋转两次
+                if gs[1 - i].contains(atm) {
+                    continue;
+                }
+                let point = Vec3::from_arr(xyzs[*atm]).rotate_point(&cent, &axis, angs[i]);
+                xyzs[*atm] = point.into_arr();
+            }
+        }
+        let mut mole = Mole::new(self.mole.atoms.clone(), None, None);
+        let atms = self.mole.atoms().nucs();
+        let crgs = self.mole.atoms().crgs();
+        mole.atoms = Atoms::new(atms, &xyzs, crgs);
+        mole
+    }
+
+    /// 修改二面角
+    /// - a1: 第一个原子索引
+    /// - a2: 第二个原子索引
+    /// - value: 旋转角度
     /// - rtype: 旋转类型（0:旋转基团1, 1:旋转基团2, 2:两个基团都旋转）
-    pub fn rotate_bond(&self, a1: usize, a2: usize, angle: f64, rtype: usize) -> Mole {
+    pub fn set_da_by(&self, a1: usize, a2: usize, value: f64, rtype: usize) -> Mole {
         let mut xyzs = self.mole.atoms().xyzs().clone();
         let g1 = self.get_group(a1, &vec![a2]);
         let g2 = self.get_group(a2, &vec![a1]);
@@ -52,9 +129,9 @@ impl<'m> Editor<'m> {
         let [dx, dy, dz] = axis.into_arr();
         let axis = [dx, dy, dz];
         let [ang1, ang2] = match rtype {
-            0 => [-angle, 0.0],
-            1 => [0.0, angle],
-            2 => [-angle / 2.0, angle / 2.0],
+            0 => [-value, 0.0],
+            1 => [0.0, value],
+            2 => [-value / 2.0, value / 2.0],
             _ => panic!("不支持"),
         };
         let angs = [ang1, ang2];
@@ -75,40 +152,6 @@ impl<'m> Editor<'m> {
         let stms = self.mole.atoms().stms().clone();
         let atoms = Atoms::new(atms, &xyzs, crgs);
         mole.atoms = atoms;
-        mole
-    }
-
-    /// 伸缩一根化学键，返回新的分子
-    /// - a1: 第一个原子索引
-    /// - a2: 第二个原子索引
-    /// - length: 伸缩长度
-    /// - stype: 伸缩类型（0:移动基团1, 1:移动基团2, 2:两个基团都移动）
-    pub fn stretch_bond(&self, a1: usize, a2: usize, length: f64, stype: usize) -> Mole {
-        let mut xyzs = self.mole.atoms().xyzs().clone();
-        let g1 = self.get_group(a1, &vec![a2]);
-        let g2 = self.get_group(a2, &vec![a1]);
-        let [len1, len2] = match stype {
-            0 => [-length, 0.0],
-            1 => [0.0, length],
-            2 => [-length / 2.0, length / 2.0],
-            _ => panic!("不支持"),
-        };
-        let axis = self.mole.atoms().vec(a1 as usize, a2 as usize).normalize();
-        let [dx, dy, dz] = axis.into_arr();
-        let lens = [len1, len2];
-        let gs = [g1, g2];
-        for i in 0..2 {
-            for atm in gs[i].iter() {
-                xyzs[*atm][0] += dx * lens[i];
-                xyzs[*atm][1] += dy * lens[i];
-                xyzs[*atm][2] += dz * lens[i];
-            }
-        }
-        let mut mole = Mole::new(self.mole.atoms.clone(), None, None);
-        let atms = self.mole.atoms().nucs();
-        let crgs = self.mole.atoms().crgs();
-        let stms = self.mole.atoms().stms().clone();
-        mole.atoms = Atoms::new(atms, &xyzs, crgs);
         mole
     }
 }

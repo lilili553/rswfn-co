@@ -237,11 +237,12 @@ impl<'m> Calculator<'m> {
         dir: &Vec3,
         nebs: &Vec<usize>,
         otype: &str,
+        mtype: &str,
     ) -> Result<(f64, Vec<f64>, f64), String> {
         let crg = self.mole.atoms.crgs()[atm];
         let STAND = element_valence(crg as usize)[1];
         let caler = bondprop::order::Calculator::new(&self.mole);
-        let vals = caler.bound(atm, dir, nebs, otype)?;
+        let vals = caler.bound(atm, dir, nebs, otype, mtype)?;
         let value = STAND - vals.iter().sum::<f64>();
         Ok((STAND, vals, value))
     }

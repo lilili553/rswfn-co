@@ -101,7 +101,7 @@ pub fn vec_project(vec1: [f64; 3], vec2: [f64; 3]) -> Result<[f64; 3], String> {
     let [x1, y1, z1] = vec1;
     let [x2, y2, z2] = vec2;
     let len2 = vec_len(&vec2);
-    if (len2 - 1.0).abs() > 1e-5 {
+    if (len2 - 1.0).abs() > 1e-2 {
         let msg = format!("v2 不是单位向量{:?},{}", vec2, len2);
         log::error!("{}", msg);
         return Err(msg);

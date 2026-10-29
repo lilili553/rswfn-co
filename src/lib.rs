@@ -9,6 +9,7 @@ pub mod loger;
 pub mod march;
 pub mod maths;
 pub mod matrix;
+pub mod optim;
 pub mod qmcalc;
 pub mod reader;
 pub mod space;

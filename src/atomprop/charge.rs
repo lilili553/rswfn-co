@@ -14,7 +14,7 @@ use crate::base::{Mole, Stm, Vec3};
 use crate::maths;
 use crate::moleprop;
 use crate::orbtprop;
-use crate::orbtprop::obtmat::MocvDest;
+use crate::orbtprop::mocv::MocvDest;
 
 /// 原子电荷计算器。
 ///
@@ -46,10 +46,6 @@ impl<'m> Calculator<'m> {
     /// 每个原子 3 个值: `[α电子, β电子, α - β]`
     pub fn spin(&self, ctype: &str) -> Vec<[f64; 3]> {
         let natm = self.mole.atoms().len();
-        if !self.mole.is_open() {
-            log::warn!("非开壳层分子无法计算自旋");
-            return vec![[0.0; 3]; natm];
-        }
         let mole_caler = moleprop::variants::Calculator::new(self.mole);
         let (mole_a, mole_b) = mole_caler.mole_spin();
 

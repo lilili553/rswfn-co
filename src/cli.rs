@@ -800,7 +800,7 @@ pub fn main() {
                     panic!("键级分解需要两个不同的原子");
                 }
                 let caler = bondprop::order::Calculator::new(&mole);
-                let vals = caler.decom(*atm1 - 1, *atm2 - 1);
+                let vals = caler.decom(*atm1 - 1, *atm2 - 1, "mayer");
                 let syms = mole.atoms().syms();
                 println!(
                     "\nMayer 键级分解: 原子{}({}) - 原子{}({})",

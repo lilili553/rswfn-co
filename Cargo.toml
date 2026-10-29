@@ -3,6 +3,33 @@ name = "rswfn"
 version = "0.1.0"
 edition = "2024"
 authors = ["Shi Xiaofei"]
+description = "A wavefunction analysis library and command-line tool for quantum chemistry"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/qmlCoder/rswfn"
+homepage = "https://github.com/qmlCoder/rswfn"
+documentation = "https://docs.rs/rswfn"
+keywords = ["quantum-chemistry", "wavefunction", "chemistry", "dft", "molecular"]
+categories = ["science", "mathematics", "command-line-utilities"]
+# Only source and metadata belong on crates.io. Large sample data, native
+# libraries and development scratch files stay out of the published package.
+exclude = [
+    "/moles",
+    "/libs",
+    "/protos",
+    "/docs",
+    "/prompts",
+    "/.cargo",
+    "/.idea",
+    "/.vscode",
+    "/flamegraph.svg",
+    "/rswfn-linux",
+    "/test.png",
+    "/test.py",
+    "/test.txt",
+    "/config.json",
+    "/TODO.md",
+]
 
 
 [lib]

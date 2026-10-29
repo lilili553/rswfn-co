@@ -1,0 +1,33 @@
+name: CI
+
+# 每次 push / PR 都在 Windows 和 Linux 上验证代码能否编译。
+# 注意：这里只做编译检查，不跑 `cargo test`，因为 tests/ 里用的是
+# `E:\code\rswfn\moles\...` 这类本机绝对路径，在 CI 上没有对应数据文件。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo check --all-targets --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked

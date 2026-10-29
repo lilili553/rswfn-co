@@ -3,11 +3,12 @@
 // use ndarray::Array2;
 use crate::base::{Ato, Atos, Mole, Stm};
 use crate::datas::FACS;
+use crate::datas::btrans;
 use crate::datas::btrans::{ang2lmns, sym2lmn};
 use crate::datas::integ::{RHM, WHM};
 use crate::datas::rys_root;
-use crate::datas::{btrans, mocv};
 use crate::maths;
+use crate::orbtprop::mocv;
 use ndarray::{Array2, Array4, Axis, s};
 use std::collections::HashMap;
 use std::f64::consts::PI;

@@ -7,7 +7,7 @@ use crate::base::Mole;
 use crate::integ;
 use crate::maths;
 use crate::orbtprop;
-use crate::orbtprop::obtmat::MocvDest;
+use crate::orbtprop::mocv::MocvDest;
 use crate::utils;
 /// 分子轨道属性计算器，计算轨道电子数和相关性质
 pub struct Calculator<'m> {

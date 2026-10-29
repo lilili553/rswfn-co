@@ -1,11 +1,13 @@
+use faer::stats::DistributionExt;
 use ndarray::{Array2, Axis, s};
 use std::collections::HashMap;
 
 use crate::base::{Mole, Stm, Vec3};
 use crate::integ::RsInt;
 use crate::maths::calc_dmat;
+use crate::orbtprop::mocv;
 // use crate::orbtprop::obtmat::Mocv;
-use crate::orbtprop::obtmat::{MocvDest, mocv_atos};
+use crate::orbtprop::mocv::{MocvDest, mocv_atos};
 use crate::{atomprop, maths, orbtprop};
 
 /// 键级计算器，支持 Mayer 和 Wiberg 键级分析
@@ -135,7 +137,7 @@ impl<'m> Calculator<'m> {
     }
 
     /// 键级分解 获得σ,pi和δ键级
-    pub fn decom(&self, ai: usize, aj: usize) -> Vec<f64> {
+    pub fn decom(&self, ai: usize, aj: usize, otype: &str) -> Vec<f64> {
         let ez = self.mole.atoms.vec(ai, aj).normalize();
         let er = Vec3::rand();
         let ey = ez.cross(&er);
@@ -152,7 +154,7 @@ impl<'m> Calculator<'m> {
             .enumerate()
             .map(|(i, dest)| {
                 let atos = mocv_atos(self.mole, dest);
-                let omat = self.mocv(&stms, &atos, "mayer");
+                let omat = self.mocv(&stms, &atos, otype);
                 let val = omat[(ai, aj)];
                 if sqrts[i] { val.sqrt() } else { val }
             })
@@ -160,12 +162,51 @@ impl<'m> Calculator<'m> {
         vals
     }
 
-    /// 计算束缚键级
-    pub fn bound(&self, atm: usize, dir: &Vec3, nebs: &Vec<usize>, otype: &str) -> Result<Vec<f64>, String> {
+    /// 计算束缚键级 使用pocv或mocv
+    pub fn bound(
+        &self,
+        atm: usize,
+        dir: &Vec3,
+        nebs: &Vec<usize>,
+        otype: &str,
+        mtype: &str,
+    ) -> Result<Vec<f64>, String> {
         let mut info = format!("计算束缚键级:{} {} {}\n", atm + 1, dir, otype);
-        let mut dirs = HashMap::new();
-        dirs.insert(atm, dir.clone());
-        let omat = self.pocv(&dirs, true, true, otype)?; // 获得键级矩阵
+
+        let omat = match mtype {
+            "pocv" => {
+                let mut dirs = HashMap::new();
+                dirs.insert(atm, dir.clone());
+                self.pocv(&dirs, true, true, otype)?
+            }
+            "mocv" => {
+                let mut stms = HashMap::new();
+                let stm = Stm::rand_ez(dir.into_arr());
+                stms.insert(atm, stm);
+                let natm = self.mole.atoms.len();
+                for i in 0..natm {
+                    if i != atm {
+                        stms.insert(i, Stm::blank());
+                    }
+                }
+                let ato_atms = self.mole.basis().atos().atms("sph");
+                let ato_syms = self.mole.basis().atos().syms("sph");
+                let dest = mocv::MocvDest::from_str("OrderDecom-SI").unwrap();
+                let keep_syms = mocv::mocv_syms(&dest, 0);
+                let mut atos = vec![];
+                for (i, idx) in ato_atms.iter().enumerate() {
+                    if *idx == atm {
+                        if keep_syms.contains(&ato_syms[i]) {
+                            atos.push(i);
+                        }
+                    } else {
+                        atos.push(i);
+                    }
+                }
+                self.mocv(&stms, &atos, otype)
+            }
+            _ => panic!("方法只可以使用pocv或mocv"),
+        };
         let mut orders = Vec::new();
         for idx in nebs.iter() {
             let order = omat[(atm as usize, *idx as usize)];

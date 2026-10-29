@@ -5,8 +5,6 @@ pub mod dhmo2;
 pub mod elems;
 pub mod integ;
 pub mod lebedev;
-pub mod march;
-pub mod mocv;
 pub mod rdens;
 pub mod roots;
 pub mod rys_root;

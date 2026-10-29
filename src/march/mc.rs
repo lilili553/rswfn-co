@@ -1,10 +1,17 @@
-//! Marching Cubes 三角形表。
+//! 经典 Marching Cubes（三角表法）。
 //!
-//! 以 8 个角点的符号位组成 key（0..255）。每一行是该 case 的三角形棱号列表，
-//! 每 3 个棱号组成一个三角形，最多 8 个三角形（24 个棱号）。
-//! 不足 24 个的位置用 -1 补齐，遇到 -1 表示该 case 的三角形已结束。
-//!
-//! 棱号 0..11 与 `crate::march::EDGES` 对应。
+//! 三角表 `MARCH` 直接内联在本文件；棱号 `0..11` 与 [`super::EDGES`] 对应。
+
+use super::{Cube, EDGES, get_around_v1, grids2voxel};
+use ndarray::Array4;
+
+//  Marching Cubes 三角形表。
+// 
+//  以 8 个角点的符号位组成 key（0..255）。每一行是该 case 的三角形棱号列表，
+//  每 3 个棱号组成一个三角形，最多 8 个三角形（24 个棱号）。
+//  不足 24 个的位置用 -1 补齐，遇到 -1 表示该 case 的三角形已结束。
+// 
+//  棱号 0..11 与 `crate::march::EDGES` 对应。
 
 #[rustfmt::skip]
 pub static MARCH: [[i8; 24]; 256] = [
@@ -265,3 +272,105 @@ pub static MARCH: [[i8; 24]; 256] = [
     [11, 10,  6,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1],
     [-1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1,  -1, -1, -1],
 ];
+
+
+/// 在给定区域内用 Marching Cubes 提取等值面（正、负两层）。
+pub fn march_cube_v2<F>(
+    func: F,
+    cube: Cube,
+    isov: f64,
+    step: f64,
+    xyzs: Option<&Vec<[f64; 3]>>,
+    limit: Option<f64>,
+) -> (Vec<[f64; 3]>, Vec<isize>)
+where
+    F: Fn(&[f64; 3]) -> f64 + Sync + Send,
+{
+    super::extract_region(&func, cube, isov, step, xyzs, limit, march_cube_v1)
+}
+
+pub fn march_cube_v1(
+    //等值面提取
+    shape: &[usize; 3],
+    grids: &Vec<[f64; 3]>,
+    values: &Vec<f64>,
+    isov: f64,
+) -> (Vec<[f64; 3]>, Vec<isize>) {
+    let voxel = grids2voxel(shape, grids, values);
+    let (pverts, nverts) = voxel2verts(&voxel, isov);
+    let mut types = vec![];
+    types.extend(vec![1; pverts.len()]);
+    types.extend(vec![-1; nverts.len()]);
+    let mut verts = vec![];
+    verts.extend(pverts);
+    verts.extend(nverts);
+    (verts, types)
+}
+
+// 将体素数据转为格点数据
+pub fn voxel2verts(voxel: &Array4<f64>, isov: f64) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
+    let shape = voxel.shape();
+    let nx = shape[0];
+    let ny = shape[1];
+    let nz = shape[2];
+
+    let mut pverts: Vec<[f64; 3]> = Vec::new();
+    let mut nverts: Vec<[f64; 3]> = Vec::new();
+    for i in 0..nx - 1 {
+        for j in 0..ny - 1 {
+            for k in 0..nz - 1 {
+                let (xyzs, vals) = get_around_v1(voxel, i, j, k);
+                // let dist = voxel[(i, j, k, 4)]; // 根据当前正方体到分子的做小距离，直接跳过
+                let nan = vals.iter().any(|val| val.is_nan());
+                if nan {
+                    continue;
+                }
+                // let vals2 = get_around_v2(voxel, i, j, k);
+                // 获取vals的最小值及最小值所在的索引
+                let vmin = vals.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+                let vmax = vals.iter().fold(-f64::INFINITY, |a, &b| a.max(b));
+
+                // 处理isov的等值面
+                if vmin < isov && isov < vmax {
+                    let key = (0..8).fold(0, |acc, n| acc + if vals[n] > isov { 1 << (7 - n) } else { 0 });
+                    pverts.extend(get_boxverts(key, &xyzs, &vals, isov));
+                }
+
+                // 处理-isov的等值面
+                if vmin < -isov && -isov < vmax {
+                    let key_neg = (0..8).fold(0, |acc, n| acc + if vals[n] > -isov { 1 << (7 - n) } else { 0 });
+                    let mut verts = get_boxverts(key_neg, &xyzs, &vals, -isov);
+                    verts.reverse();
+                    nverts.extend(verts);
+                }
+            }
+        }
+    }
+    (pverts, nverts)
+}
+// 获取等值面与小盒子的交点
+fn get_boxverts(key: usize, xyzs: &[[f64; 3]; 8], vals: &[f64; 8], isov: f64) -> Vec<[f64; 3]> {
+    let mut verts: Vec<[f64; 3]> = Vec::new();
+    let row = &MARCH[key]; // 每 3 个棱号一个三角形，不足的位置用 -1 补齐
+    for f in (0..row.len()).step_by(3) {
+        let e0 = row[f];
+        if e0 < 0 {
+            break; // -1 表示该 case 的三角形已结束
+        }
+        for e in [e0, row[f + 1], row[f + 2]] {
+            let e = e as usize;
+            let a = EDGES[e][0];
+            let b = EDGES[e][1];
+            let pa = xyzs[a as usize];
+            let pb = xyzs[b as usize];
+            let va = vals[a as usize];
+            let vb = vals[b as usize];
+            let t = (isov - va) / (vb - va);
+            let x = pa[0] + t * (pb[0] - pa[0]);
+            let y = pa[1] + t * (pb[1] - pa[1]);
+            let z = pa[2] + t * (pb[2] - pa[2]);
+            verts.push([x, y, z]);
+        }
+    }
+    verts
+}

@@ -241,7 +241,10 @@ impl LogReader {
             obt_engs.extend_from_slice(&engs);
 
             // 轨道系数
-            for j in 0..nobt {
+            // 每个块中系数的行数是 nato（NBasis，包含被剔除的线性依赖轨道），
+            // 列数是 nobt（NBsUse，实际使用的分子轨道数）。当存在线性依赖时
+            // nato != nobt，因此必须按 nato 读取所有行，否则矩阵最后 nato - nobt 行会保持为 0。
+            for j in 0..nato {
                 let coef_line = self.lines.get((loc + j + 3) as usize).expect("获取文件行失败");
                 let coef_part = &coef_line[cols[5]..];
                 let coefs: Vec<f64> = coef_part

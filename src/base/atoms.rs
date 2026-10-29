@@ -112,6 +112,56 @@ impl Stm {
         self.mat = stm.mat.clone();
         self.non = stm.non;
     }
+
+    /// 生成一个与单位向量 `axis` 正交的随机单位向量
+    ///
+    /// 若 10 次随机尝试均与 `axis` 几乎平行（概率极小），则退化为一个确定的垂直方向。
+    fn rand_perp(axis: &[f64; 3]) -> [f64; 3] {
+        // 随机方向去掉 axis 方向的分量，归一化后即为与 axis 正交的单位向量
+        for _ in 0..10 {
+            let rand = Vec3::rand().into_arr();
+            let dot = rand[0] * axis[0] + rand[1] * axis[1] + rand[2] * axis[2];
+            let orth = [
+                rand[0] - dot * axis[0],
+                rand[1] - dot * axis[1],
+                rand[2] - dot * axis[2],
+            ];
+            if maths::vec_len(&orth) > 1e-6 {
+                return maths::vec_norm(&orth);
+            }
+        }
+        // 随机方向与 axis 几乎平行时，退化为一个确定的垂直方向
+        let other = if axis[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        maths::vec_norm(&maths::vec_cross(axis, &other))
+    }
+
+    /// ex方向是指定的，另外两个方向是任意的
+    ///
+    /// `ey` 由随机方向对 `ex` 正交化得到，`ez = ex × ey`，因此返回的局部坐标系
+    /// 始终是一组右手正交基。
+    pub fn rand_ex(ex: [f64; 3]) -> Self {
+        assert!(maths::vec_len(&ex) > 1e-12, "ex 不能是零向量");
+        let ex = maths::vec_norm(&ex);
+        let ey = Self::rand_perp(&ex);
+        let ez = maths::vec_cross(&ex, &ey);
+        Stm::new(ex, ey, ez)
+    }
+
+    /// ez方向是指定的，另外两个方向是任意的
+    ///
+    /// `ex` 由随机方向对 `ez` 正交化得到，`ey = ez × ex`，因此返回的局部坐标系
+    /// 始终是一组右手正交基。
+    pub fn rand_ez(ez: [f64; 3]) -> Self {
+        assert!(maths::vec_len(&ez) > 1e-12, "ez 不能是零向量");
+        let ez = maths::vec_norm(&ez);
+        let ex = Self::rand_perp(&ez);
+        let ey = maths::vec_cross(&ez, &ex);
+        Stm::new(ex, ey, ez)
+    }
 }
 
 impl fmt::Display for Stm {

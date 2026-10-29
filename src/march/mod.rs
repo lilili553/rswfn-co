@@ -1,9 +1,26 @@
+//! 等值面提取（Isosurface extraction）。
+//!
+//! 提供三种方法，接口一致，返回 `(顶点表, 类型表)`，类型 `+1` 表示 `isov` 层、`-1` 表示 `-isov` 层：
+//!
+//! - [`mc`]：经典 Marching Cubes（三角表，速度快，但对角面存在歧义可能留孔）
+//! - [`mt`]：Marching Tetrahedra（立方体切 6 个四面体，无歧义、天然水密）
+//! - [`sn`]：Surface Nets（每个立方体一个顶点，顶点天然共享、水密）
+
+pub mod mc;
+pub mod mt;
+pub mod sn;
+
 use crate::base::Vec3;
-use crate::datas::march::MARCH;
 use crate::maths::calc_dist;
 use ndarray::Array4;
 use rayon::prelude::*;
 use std::collections::HashMap;
+
+/// 三维网格点 `(i, j, k)` 在扁平数组中的下标（`i` 最慢、`k` 最快）。
+#[inline]
+pub(crate) fn grid_index(i: usize, j: usize, k: usize, ny: usize, nz: usize) -> usize {
+    (i * ny + j) * nz + k
+}
 
 pub struct Cube {
     p0: [f64; 3],
@@ -182,16 +199,332 @@ pub fn flatten(
     (verts_flat, faces_flat)
 }
 
-pub fn march_cube_v2<F>(
-    func: F,
+// 将格点数据转为体素数据
+pub fn grids2voxel(shape: &[usize; 3], grids: &Vec<[f64; 3]>, values: &Vec<f64>) -> Array4<f64> {
+    let [nx, ny, nz] = *shape;
+    let mut voxel = Array4::zeros((nx as usize, ny as usize, nz as usize, 4));
+    let mut n = 0;
+    for i in 0..nx {
+        for j in 0..ny {
+            for k in 0..nz {
+                let [x, y, z] = grids[n];
+                let v = values[n];
+                voxel[(i as usize, j as usize, k as usize, 0)] = x;
+                voxel[(i as usize, j as usize, k as usize, 1)] = y;
+                voxel[(i as usize, j as usize, k as usize, 2)] = z;
+                voxel[(i as usize, j as usize, k as usize, 3)] = v;
+                n += 1;
+            }
+        }
+    }
+    voxel
+}
+
+// 将体素数据转为正方形数据
+pub fn voxel2cubes(voxel: &Array4<f64>, isov: f64) -> Vec<Cube> {
+    let shape = voxel.shape();
+    let nx = shape[0];
+    let ny = shape[1];
+    let nz = shape[2];
+
+    let mut cubes = Vec::new();
+    for i in 0..nx - 1 {
+        for j in 0..ny - 1 {
+            for k in 0..nz - 1 {
+                // let (xyzs, vals) = get_around(voxel, i, j, k);
+                let x0 = voxel[(i, j, k, 0)];
+                let y0 = voxel[(i, j, k, 1)];
+                let z0 = voxel[(i, j, k, 2)];
+                let x1 = voxel[(i + 1, j + 1, k + 1, 0)];
+                let y1 = voxel[(i + 1, j + 1, k + 1, 1)];
+                let z1 = voxel[(i + 1, j + 1, k + 1, 2)];
+                let vals = get_around_v2(voxel, i, j, k);
+                // 获取vals的最小值及最小值所在的索引
+                let vmin = vals.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+                let vmax = vals.iter().fold(-f64::INFINITY, |a, &b| a.max(b));
+
+                // 处理isov的等值面
+                if vmin < isov && isov < vmax {
+                    cubes.push(Cube::new([x0, y0, z0], [x1, y1, z1]));
+                }
+
+                // 处理-isov的等值面
+                if vmin < -isov && -isov < vmax {
+                    cubes.push(Cube::new([x0, y0, z0], [x1, y1, z1]));
+                }
+            }
+        }
+    }
+    cubes
+}
+
+#[rustfmt::skip]
+static AROUND2:[[usize;2];19]=[
+    [0,1],[1,2],[2,3],[3,0],
+    [4,5],[5,6],[6,7],[7,4],
+    [0,4],[1,5],[2,6],[4,7],
+    [0,2],[0,5],[0,7],
+    [6,1],[6,3],[6,4],
+    [0,6]
+];
+fn get_around_v2(voxel: &Array4<f64>, i: usize, j: usize, k: usize) -> Vec<f64> {
+    let mut vals = Vec::new();
+    for d in 0..8 {
+        let [dx, dy, dz] = DIDX[d];
+        vals.push(voxel[(i + dx, j + dy, k + dz, 3)]);
+    }
+    for [d0, d1] in AROUND2 {
+        let [dx0, dy0, dz0] = DIDX[d0];
+        let [dx1, dy1, dz1] = DIDX[d1];
+        let v0 = voxel[(i + dx0, j + dy0, k + dz0, 3)];
+        let v1 = voxel[(i + dx1, j + dy1, k + dz1, 3)];
+        vals.push((v0 + v1) / 2.0);
+    }
+    vals
+}
+
+static DIDX: [[usize; 3]; 8] = [
+    [0, 0, 0],
+    [1, 0, 0],
+    [1, 1, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+    [1, 0, 1],
+    [1, 1, 1],
+    [0, 1, 1],
+];
+// 获取一个点周围的点
+fn get_around_v1(voxel: &Array4<f64>, i: usize, j: usize, k: usize) -> ([[f64; 3]; 8], [f64; 8]) {
+    let mut xyzs = [[0.0; 3]; 8];
+    let mut vals = [0.0; 8];
+
+    for n in 0..8 {
+        let [di, dj, dk] = DIDX[n];
+        let x = voxel[(i + di, j + dj, k + dk, 0)];
+        let y = voxel[(i + di, j + dj, k + dk, 1)];
+        let z = voxel[(i + di, j + dj, k + dk, 2)];
+        let v = voxel[(i + di, j + dj, k + dk, 3)];
+        xyzs[n] = [x, y, z];
+        vals[n] = v;
+    }
+    (xyzs, vals)
+}
+
+static EDGES: [[isize; 2]; 12] = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [0, 3],
+    [1, 5],
+    [2, 6],
+    [3, 7],
+    [0, 4],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+    [7, 4],
+];
+
+// 将顶点合并
+pub fn merge_verts(old_verts: &Vec<[f64; 3]>) -> (Vec<[f64; 3]>, Vec<[usize; 3]>) {
+    let mut verts: Vec<[f64; 3]> = Vec::new();
+    let mut faces: Vec<[usize; 3]> = Vec::new();
+    let nvert = old_verts.len();
+    let mut filts = vec![false; nvert]; // 标记顶点是否已被合并
+    let mut fidxs = vec![0; nvert]; // 存储新顶点索引
+
+    for i in 0..nvert {
+        if filts[i] {
+            continue;
+        }
+        // 添加当前顶点到新数组，并记录新索引
+        let new_idx = verts.len();
+        // 计算所有合并顶点的平均位置
+        let mut sum = [old_verts[i][0], old_verts[i][1], old_verts[i][2]];
+        let mut count = 1;
+        filts[i] = true;
+        fidxs[i] = new_idx;
+        // 遍历所有顶点，合并相近的顶点
+        for j in 0..nvert {
+            if i == j || filts[j] {
+                continue;
+            }
+            if calc_dist(&old_verts[i], &old_verts[j]) < 0.0001 {
+                filts[j] = true;
+                fidxs[j] = new_idx;
+                sum[0] += old_verts[j][0];
+                sum[1] += old_verts[j][1];
+                sum[2] += old_verts[j][2];
+                count += 1;
+            }
+        }
+        // 使用平均位置作为新顶点位置
+        let avg = [sum[0] / count as f64, sum[1] / count as f64, sum[2] / count as f64];
+        verts.push(avg);
+    }
+
+    // 生成面，确保索引不越界
+    for i in (0..nvert).step_by(3) {
+        if i + 2 >= nvert {
+            break;
+        }
+        let idx0 = fidxs[i];
+        let idx1 = fidxs[i + 1];
+        let idx2 = fidxs[i + 2];
+        if idx0 != idx1 && idx1 != idx2 && idx0 != idx2 {
+            faces.push([idx0 as usize, idx1 as usize, idx2 as usize]);
+        }
+    }
+
+    (verts, faces)
+}
+
+/// 标量场在 `p` 处的梯度（中心差分）。
+fn field_grad<F: Fn(&[f64; 3]) -> f64>(func: &F, p: [f64; 3], h: f64) -> [f64; 3] {
+    let gx = func(&[p[0] + h, p[1], p[2]]) - func(&[p[0] - h, p[1], p[2]]);
+    let gy = func(&[p[0], p[1] + h, p[2]]) - func(&[p[0], p[1] - h, p[2]]);
+    let gz = func(&[p[0], p[1], p[2] + h]) - func(&[p[0], p[1], p[2] - h]);
+    [gx / (2.0 * h), gy / (2.0 * h), gz / (2.0 * h)]
+}
+
+/// 把一个点沿梯度投影到等值面 `f(p) = target`（牛顿迭代，1~2 步）。
+fn snap_point<F: Fn(&[f64; 3]) -> f64>(mut p: [f64; 3], func: &F, target: f64, h: f64) -> [f64; 3] {
+    for _ in 0..2 {
+        let d = func(&p) - target;
+        if !d.is_finite() {
+            return p;
+        }
+        let g = field_grad(func, p, h);
+        let gg = g[0] * g[0] + g[1] * g[1] + g[2] * g[2];
+        if !gg.is_finite() || gg < 1e-12 {
+            return p;
+        }
+        let t = d / gg;
+        p = [p[0] - t * g[0], p[1] - t * g[1], p[2] - t * g[2]];
+    }
+    p
+}
+
+/// 把一组顶点投影到真实等值面，消除"卡在网格棱上"造成的锯齿，使网格更平滑。
+///
+/// `types` 为 `+1` 的顶点投到 `isov`，`-1` 的投到 `-isov`；`h` 为差分步长（一般取 `step * 0.5`）。
+pub fn snap_to_isosurface<F: Fn(&[f64; 3]) -> f64>(
+    verts: &mut [[f64; 3]],
+    types: &[isize],
+    isov: f64,
+    func: &F,
+    h: f64,
+) {
+    for (i, p) in verts.iter_mut().enumerate() {
+        let target = isov * types[i] as f64;
+        *p = snap_point(*p, func, target, h);
+    }
+}
+
+/// 拉普拉斯平滑的一步（`lambda` 取正为收缩、取负为膨胀）。
+fn laplacian_step(pos: &mut Vec<[f64; 3]>, adj: &[Vec<usize>], lambda: f64) {
+    let old = pos.clone();
+    for i in 0..old.len() {
+        if adj[i].is_empty() {
+            continue;
+        }
+        let mut c = [0.0f64; 3];
+        for &j in &adj[i] {
+            c[0] += old[j][0];
+            c[1] += old[j][1];
+            c[2] += old[j][2];
+        }
+        let inv = 1.0 / adj[i].len() as f64;
+        pos[i] = [
+            old[i][0] + lambda * (c[0] * inv - old[i][0]),
+            old[i][1] + lambda * (c[1] * inv - old[i][1]),
+            old[i][2] + lambda * (c[2] * inv - old[i][2]),
+        ];
+    }
+}
+
+/// 把三角面片焊接后做 Taubin 平滑（λ/μ 交替，避免普通拉普拉斯造成的收缩），
+/// 再沿梯度重新投影回真实等值面 `f = ±isov`，从而在保持形状的前提下让表面变平滑。
+///
+/// `iterations` 越大越平滑（一般 5~10 即可）。返回新的顶点表（仍是每 3 个一组）。
+pub fn smooth_isosurface<F: Fn(&[f64; 3]) -> f64>(
+    verts: &[[f64; 3]],
+    types: &[isize],
+    isov: f64,
+    func: &F,
+    iterations: usize,
+) -> Vec<[f64; 3]> {
+    // 1. 按位置焊接
+    let mut map: HashMap<(i64, i64, i64), usize> = HashMap::new();
+    let mut wpos: Vec<[f64; 3]> = Vec::new();
+    let mut wtype: Vec<isize> = Vec::new();
+    let mut sidx: Vec<usize> = Vec::with_capacity(verts.len());
+    for (v, t) in verts.iter().zip(types) {
+        let key = (
+            (v[0] * 1e5).round() as i64,
+            (v[1] * 1e5).round() as i64,
+            (v[2] * 1e5).round() as i64,
+        );
+        let id = match map.get(&key) {
+            Some(&i) => i,
+            None => {
+                let i = wpos.len();
+                map.insert(key, i);
+                wpos.push(*v);
+                wtype.push(*t);
+                i
+            }
+        };
+        sidx.push(id);
+    }
+
+    // 2. 建立顶点邻接
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); wpos.len()];
+    for tri in sidx.chunks_exact(3) {
+        for (a, b) in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+            if a == b {
+                continue;
+            }
+            if !adj[a].contains(&b) {
+                adj[a].push(b);
+            }
+            if !adj[b].contains(&a) {
+                adj[b].push(a);
+            }
+        }
+    }
+
+    // 3. Taubin 平滑
+    for _ in 0..iterations {
+        laplacian_step(&mut wpos, &adj, 0.5);
+        laplacian_step(&mut wpos, &adj, -0.53);
+    }
+
+    // 4. 重新投影到真实等值面，保持形状
+    for i in 0..wpos.len() {
+        let target = isov * wtype[i] as f64;
+        wpos[i] = snap_point(wpos[i], func, target, 1e-3);
+    }
+
+    // 5. 重新展开成三角形 soup
+    sidx.iter().map(|&i| wpos[i]).collect()
+}
+
+/// 在给定的大立方体区域内采样标量场，并用 `extract` 指定的方法提取等值面（正、负两层）。
+///
+/// `extract` 的签名：`(shape, grids, values, isov) -> (verts, types)`。
+pub fn extract_region<F, E>(
+    func: &F,
     cube: Cube,
     isov: f64,
     step: f64,
     xyzs: Option<&Vec<[f64; 3]>>,
-    limit: Option<f64>, // 默认0.0，所有的都计算
+    limit: Option<f64>,
+    extract: E,
 ) -> (Vec<[f64; 3]>, Vec<isize>)
 where
     F: Fn(&[f64; 3]) -> f64 + Sync + Send,
+    E: Fn(&[usize; 3], &Vec<[f64; 3]>, &Vec<f64>, f64) -> (Vec<[f64; 3]>, Vec<isize>) + Sync + Send,
 {
     let limit = match limit {
         Some(limit) => limit,
@@ -383,7 +716,7 @@ where
                         // func(&grids[g])
                     })
                     .collect();
-                let (cverts, ctypes) = march_cube_v1(&shape, &grids, &values, isov);
+                let (cverts, ctypes) = extract(&shape, &grids, &values, isov);
                 Some((cverts, ctypes))
             } else {
                 None
@@ -396,270 +729,4 @@ where
         types.extend(ctypes);
     }
     (verts, types)
-}
-
-pub fn march_cube_v1(
-    //等值面提取
-    shape: &[usize; 3],
-    grids: &Vec<[f64; 3]>,
-    values: &Vec<f64>,
-    isov: f64,
-) -> (Vec<[f64; 3]>, Vec<isize>) {
-    let voxel = grids2voxel(shape, grids, values);
-    let (pverts, nverts) = voxel2verts(&voxel, isov);
-    let mut types = vec![];
-    types.extend(vec![1; pverts.len()]);
-    types.extend(vec![-1; nverts.len()]);
-    let mut verts = vec![];
-    verts.extend(pverts);
-    verts.extend(nverts);
-    (verts, types)
-}
-
-// 将格点数据转为体素数据
-pub fn grids2voxel(shape: &[usize; 3], grids: &Vec<[f64; 3]>, values: &Vec<f64>) -> Array4<f64> {
-    let [nx, ny, nz] = *shape;
-    let mut voxel = Array4::zeros((nx as usize, ny as usize, nz as usize, 4));
-    let mut n = 0;
-    for i in 0..nx {
-        for j in 0..ny {
-            for k in 0..nz {
-                let [x, y, z] = grids[n];
-                let v = values[n];
-                voxel[(i as usize, j as usize, k as usize, 0)] = x;
-                voxel[(i as usize, j as usize, k as usize, 1)] = y;
-                voxel[(i as usize, j as usize, k as usize, 2)] = z;
-                voxel[(i as usize, j as usize, k as usize, 3)] = v;
-                n += 1;
-            }
-        }
-    }
-    voxel
-}
-
-// 将体素数据转为正方形数据
-pub fn voxel2cubes(voxel: &Array4<f64>, isov: f64) -> Vec<Cube> {
-    let shape = voxel.shape();
-    let nx = shape[0];
-    let ny = shape[1];
-    let nz = shape[2];
-
-    let mut cubes = Vec::new();
-    for i in 0..nx - 1 {
-        for j in 0..ny - 1 {
-            for k in 0..nz - 1 {
-                // let (xyzs, vals) = get_around(voxel, i, j, k);
-                let x0 = voxel[(i, j, k, 0)];
-                let y0 = voxel[(i, j, k, 1)];
-                let z0 = voxel[(i, j, k, 2)];
-                let x1 = voxel[(i + 1, j + 1, k + 1, 0)];
-                let y1 = voxel[(i + 1, j + 1, k + 1, 1)];
-                let z1 = voxel[(i + 1, j + 1, k + 1, 2)];
-                let vals = get_around_v2(voxel, i, j, k);
-                // 获取vals的最小值及最小值所在的索引
-                let vmin = vals.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-                let vmax = vals.iter().fold(-f64::INFINITY, |a, &b| a.max(b));
-
-                // 处理isov的等值面
-                if vmin < isov && isov < vmax {
-                    cubes.push(Cube::new([x0, y0, z0], [x1, y1, z1]));
-                }
-
-                // 处理-isov的等值面
-                if vmin < -isov && -isov < vmax {
-                    cubes.push(Cube::new([x0, y0, z0], [x1, y1, z1]));
-                }
-            }
-        }
-    }
-    cubes
-}
-
-#[rustfmt::skip]
-static AROUND2:[[usize;2];19]=[
-    [0,1],[1,2],[2,3],[3,0],
-    [4,5],[5,6],[6,7],[7,4],
-    [0,4],[1,5],[2,6],[4,7],
-    [0,2],[0,5],[0,7],
-    [6,1],[6,3],[6,4],
-    [0,6]
-];
-fn get_around_v2(voxel: &Array4<f64>, i: usize, j: usize, k: usize) -> Vec<f64> {
-    let mut vals = Vec::new();
-    for d in 0..8 {
-        let [dx, dy, dz] = DIDX[d];
-        vals.push(voxel[(i + dx, j + dy, k + dz, 3)]);
-    }
-    for [d0, d1] in AROUND2 {
-        let [dx0, dy0, dz0] = DIDX[d0];
-        let [dx1, dy1, dz1] = DIDX[d1];
-        let v0 = voxel[(i + dx0, j + dy0, k + dz0, 3)];
-        let v1 = voxel[(i + dx1, j + dy1, k + dz1, 3)];
-        vals.push((v0 + v1) / 2.0);
-    }
-    vals
-}
-
-// 将体素数据转为格点数据
-pub fn voxel2verts(voxel: &Array4<f64>, isov: f64) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
-    let shape = voxel.shape();
-    let nx = shape[0];
-    let ny = shape[1];
-    let nz = shape[2];
-
-    let mut pverts: Vec<[f64; 3]> = Vec::new();
-    let mut nverts: Vec<[f64; 3]> = Vec::new();
-    for i in 0..nx - 1 {
-        for j in 0..ny - 1 {
-            for k in 0..nz - 1 {
-                let (xyzs, vals) = get_around_v1(voxel, i, j, k);
-                // let dist = voxel[(i, j, k, 4)]; // 根据当前正方体到分子的做小距离，直接跳过
-                let nan = vals.iter().any(|val| val.is_nan());
-                if nan {
-                    continue;
-                }
-                // let vals2 = get_around_v2(voxel, i, j, k);
-                // 获取vals的最小值及最小值所在的索引
-                let vmin = vals.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-                let vmax = vals.iter().fold(-f64::INFINITY, |a, &b| a.max(b));
-
-                // 处理isov的等值面
-                if vmin < isov && isov < vmax {
-                    let key = (0..8).fold(0, |acc, n| acc + if vals[n] > isov { 1 << (7 - n) } else { 0 });
-                    pverts.extend(get_boxverts(key, &xyzs, &vals, isov));
-                }
-
-                // 处理-isov的等值面
-                if vmin < -isov && -isov < vmax {
-                    let key_neg = (0..8).fold(0, |acc, n| acc + if vals[n] > -isov { 1 << (7 - n) } else { 0 });
-                    let mut verts = get_boxverts(key_neg, &xyzs, &vals, -isov);
-                    verts.reverse();
-                    nverts.extend(verts);
-                }
-            }
-        }
-    }
-    (pverts, nverts)
-}
-
-static DIDX: [[usize; 3]; 8] = [
-    [0, 0, 0],
-    [1, 0, 0],
-    [1, 1, 0],
-    [0, 1, 0],
-    [0, 0, 1],
-    [1, 0, 1],
-    [1, 1, 1],
-    [0, 1, 1],
-];
-// 获取一个点周围的点
-fn get_around_v1(voxel: &Array4<f64>, i: usize, j: usize, k: usize) -> ([[f64; 3]; 8], [f64; 8]) {
-    let mut xyzs = [[0.0; 3]; 8];
-    let mut vals = [0.0; 8];
-
-    for n in 0..8 {
-        let [di, dj, dk] = DIDX[n];
-        let x = voxel[(i + di, j + dj, k + dk, 0)];
-        let y = voxel[(i + di, j + dj, k + dk, 1)];
-        let z = voxel[(i + di, j + dj, k + dk, 2)];
-        let v = voxel[(i + di, j + dj, k + dk, 3)];
-        xyzs[n] = [x, y, z];
-        vals[n] = v;
-    }
-    (xyzs, vals)
-}
-
-static EDGES: [[isize; 2]; 12] = [
-    [0, 1],
-    [1, 2],
-    [2, 3],
-    [0, 3],
-    [1, 5],
-    [2, 6],
-    [3, 7],
-    [0, 4],
-    [4, 5],
-    [5, 6],
-    [6, 7],
-    [7, 4],
-];
-// 获取等值面与小盒子的交点
-fn get_boxverts(key: usize, xyzs: &[[f64; 3]; 8], vals: &[f64; 8], isov: f64) -> Vec<[f64; 3]> {
-    let mut verts: Vec<[f64; 3]> = Vec::new();
-    let row = &MARCH[key]; // 每 3 个棱号一个三角形，不足的位置用 -1 补齐
-    for f in (0..row.len()).step_by(3) {
-        let e0 = row[f];
-        if e0 < 0 {
-            break; // -1 表示该 case 的三角形已结束
-        }
-        for e in [e0, row[f + 1], row[f + 2]] {
-            let e = e as usize;
-            let a = EDGES[e][0];
-            let b = EDGES[e][1];
-            let pa = xyzs[a as usize];
-            let pb = xyzs[b as usize];
-            let va = vals[a as usize];
-            let vb = vals[b as usize];
-            let t = (isov - va) / (vb - va);
-            let x = pa[0] + t * (pb[0] - pa[0]);
-            let y = pa[1] + t * (pb[1] - pa[1]);
-            let z = pa[2] + t * (pb[2] - pa[2]);
-            verts.push([x, y, z]);
-        }
-    }
-    verts
-}
-
-// 将顶点合并
-pub fn merge_verts(old_verts: &Vec<[f64; 3]>) -> (Vec<[f64; 3]>, Vec<[usize; 3]>) {
-    let mut verts: Vec<[f64; 3]> = Vec::new();
-    let mut faces: Vec<[usize; 3]> = Vec::new();
-    let nvert = old_verts.len();
-    let mut filts = vec![false; nvert]; // 标记顶点是否已被合并
-    let mut fidxs = vec![0; nvert]; // 存储新顶点索引
-
-    for i in 0..nvert {
-        if filts[i] {
-            continue;
-        }
-        // 添加当前顶点到新数组，并记录新索引
-        let new_idx = verts.len();
-        // 计算所有合并顶点的平均位置
-        let mut sum = [old_verts[i][0], old_verts[i][1], old_verts[i][2]];
-        let mut count = 1;
-        filts[i] = true;
-        fidxs[i] = new_idx;
-        // 遍历所有顶点，合并相近的顶点
-        for j in 0..nvert {
-            if i == j || filts[j] {
-                continue;
-            }
-            if calc_dist(&old_verts[i], &old_verts[j]) < 0.0001 {
-                filts[j] = true;
-                fidxs[j] = new_idx;
-                sum[0] += old_verts[j][0];
-                sum[1] += old_verts[j][1];
-                sum[2] += old_verts[j][2];
-                count += 1;
-            }
-        }
-        // 使用平均位置作为新顶点位置
-        let avg = [sum[0] / count as f64, sum[1] / count as f64, sum[2] / count as f64];
-        verts.push(avg);
-    }
-
-    // 生成面，确保索引不越界
-    for i in (0..nvert).step_by(3) {
-        if i + 2 >= nvert {
-            break;
-        }
-        let idx0 = fidxs[i];
-        let idx1 = fidxs[i + 1];
-        let idx2 = fidxs[i + 2];
-        if idx0 != idx1 && idx1 != idx2 && idx0 != idx2 {
-            faces.push([idx0 as usize, idx1 as usize, idx2 as usize]);
-        }
-    }
-
-    (verts, faces)
 }

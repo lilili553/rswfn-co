@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
+use std::cell::RefCell;
 use std::sync::OnceLock;
 
-use crate::base::Mole;
+use crate::base::{Atos, Mole};
 use crate::datas::rdens;
 use crate::gridprop::GridVals;
 use crate::gridprop::wfnfunc;
@@ -17,6 +18,29 @@ pub struct Calculator<'m> {
     mole_pi_pocv: OnceLock<Mole>,
     mole_pi_mocv: OnceLock<Mole>,
     mole_spin: OnceLock<(Mole, Mole)>,
+    /// 与格点无关的预计算量（惰性初始化）
+    rho_plan: OnceLock<RhoPlan<'m>>,
+}
+
+/// 与格点无关的预计算量，避免在每个格点上重复计算。
+struct RhoPlan<'m> {
+    /// car 形式的原子轨道
+    atos: &'m Atos,
+    /// car 形式的密度矩阵
+    dmat: &'m Array2<f64>,
+    /// 实际参与计算的基函数在 `atos.cars` 中的索引（升序）
+    idxs: Vec<usize>,
+    /// `idxs[k]` 所属基函数的中心坐标
+    xyzs: Vec<[f64; 3]>,
+    /// `idxs[k]` 的截断距离平方，超过该值该基函数恒为 0
+    r2cut: Vec<f64>,
+}
+
+thread_local! {
+    /// 线程内复用的临时缓冲，避免逐格点分配堆内存
+    static SIG_BUF: RefCell<Vec<usize>> = RefCell::new(Vec::new());
+    static V0_BUF: RefCell<Vec<f64>> = RefCell::new(Vec::new());
+    static GV_BUF: RefCell<Vec<GridVals>> = RefCell::new(Vec::new());
 }
 
 impl<'m> Calculator<'m> {
@@ -32,6 +56,7 @@ impl<'m> Calculator<'m> {
             mole_pi_pocv: OnceLock::new(),
             mole_pi_mocv: OnceLock::new(),
             mole_spin: OnceLock::new(),
+            rho_plan: OnceLock::new(),
         }
     }
 
@@ -97,63 +122,54 @@ impl<'m> Calculator<'m> {
         GridVals::new(mol_rho0, mol_rho1, mol_rho2)
     }
 
-    // 计算某一点处的电子密度，根据密度矩阵计算分子电子密度
-    #[rustfmt::skip]
-    /// 根据密度矩阵计算一点处的电子密度及其梯度、Hessian
+    /// 构建（或复用）与格点无关的预计算量。
+    fn rho_plan(&self) -> &RhoPlan<'m> {
+        self.rho_plan.get_or_init(|| {
+            let atos = self.mole.basis().atos();
+            let dmat = self.mole.coefs().get_dmat("car", self.mole);
+            let atoms = &self.mole.atoms;
+            let cars = &atos.cars;
+            let mut idxs = Vec::new();
+            let mut xyzs = Vec::new();
+            let mut r2cut = Vec::new();
+            for (i, ato) in cars.iter().enumerate() {
+                if !self.atms.contains(&ato.atm) {
+                    continue;
+                }
+                // `gtf` 中当 alpha * r^2 > 20 时该原高斯基元恒为 0，
+                // 因此只要最弥散（alpha 最小）的原高斯基元都为 0，
+                // 整个收缩基函数在该点即为 0，可以直接跳过。
+                let amin = ato.alps.iter().cloned().fold(f64::INFINITY, f64::min);
+                idxs.push(i);
+                xyzs.push(atoms.get(ato.atm).xyz);
+                r2cut.push(20.0 / amin);
+            }
+            RhoPlan {
+                atos,
+                dmat,
+                idxs,
+                xyzs,
+                r2cut,
+            }
+        })
+    }
+
+    /// 根据密度矩阵计算一点处的电子密度及其梯度、Hessian。
+    ///
+    /// 只在该格点邻域内取值非零的基函数上求和，截断判据与 `gtf` 内部的
+    /// `exp(-alpha * r^2)` 截断一致，因此结果与原实现相同；但单点计算量
+    /// 只取决于邻域内基函数的数目，而不再随分子整体增大而增长。
     pub fn mol_rho_dm(&self, grid: &[f64; 3], level: usize) -> GridVals {
-        let ato_atms=self.mole.basis().atos().atms("car");
-        let dmat_car=self.mole.coefs().get_dmat("car", self.mole);
-        let ato_wfns = self.wfn_caler.ato_wfn(&grid, level);
-        let mut mol_rho0 = 0.0;
-        let mut mol_rho1 = [0.0; 3];
-        let mut mol_rho2 = [[0.0; 3]; 3];
-        let nmat = ato_wfns.len();
-
-        for i in 0..nmat {
-            let atmi= ato_atms[i];
-            if !self.atms.contains(&atmi){
-                continue;
-            }
-            for j in i..nmat {
-                let atmj= ato_atms[j];
-                if !self.atms.contains(&atmj){ // 如果不是需要计算的原子则跳过
-                    continue;
-                }
-
-                let d = dmat_car[(i, j)];
-                // let d=d*self.dmat_fix[(atmi as usize,atmj as usize)]; // 给密度矩阵加矫正
-
-                if d==0.0 {
-                    continue;
-                }
-                let k= if i==j {1.0} else {2.0};
-                mol_rho0 += ato_wfns[i].val0 * ato_wfns[j].val0 * d*k;
-
-                // 一阶导数：dx
-                if level>=1{
-                    mol_rho1[0] += (ato_wfns[i].val0 * ato_wfns[j].val1[0] + ato_wfns[j].val0 * ato_wfns[i].val1[0]) * d*k;
-                    mol_rho1[1] += (ato_wfns[i].val0 * ato_wfns[j].val1[1] + ato_wfns[j].val0 * ato_wfns[i].val1[1]) * d*k;
-                    mol_rho1[2] += (ato_wfns[i].val0 * ato_wfns[j].val1[2] + ato_wfns[j].val0 * ato_wfns[i].val1[2]) * d*k;
-                }
-
-
-                // 二阶导数：dxx
-                if level>=2{
-                    mol_rho2[0][0] += (ato_wfns[i].val2[0][0] * ato_wfns[j].val0 + 2.0 * ato_wfns[i].val1[0] * ato_wfns[j].val1[0]+ ato_wfns[i].val0 * ato_wfns[j].val2[0][0])* d*k;
-                    mol_rho2[1][1] += (ato_wfns[i].val2[1][1] * ato_wfns[j].val0 + 2.0 * ato_wfns[i].val1[1] * ato_wfns[j].val1[1]+ ato_wfns[i].val0 * ato_wfns[j].val2[1][1])* d*k;
-                    mol_rho2[2][2] += (ato_wfns[i].val2[2][2] * ato_wfns[j].val0 + 2.0 * ato_wfns[i].val1[2] * ato_wfns[j].val1[2]+ ato_wfns[i].val0 * ato_wfns[j].val2[2][2])* d*k;
-                    mol_rho2[0][1] += (ato_wfns[i].val2[0][1] * ato_wfns[j].val0+ ato_wfns[i].val1[0] * ato_wfns[j].val1[1]+ ato_wfns[i].val1[1] * ato_wfns[j].val1[0]+ ato_wfns[i].val0 * ato_wfns[j].val2[0][1])* d*k;
-                    mol_rho2[0][2] += (ato_wfns[i].val2[0][2] * ato_wfns[j].val0+ ato_wfns[i].val1[0] * ato_wfns[j].val1[2]+ ato_wfns[i].val1[2] * ato_wfns[j].val1[0]+ ato_wfns[i].val0 * ato_wfns[j].val2[0][2])* d*k;
-                    mol_rho2[1][2] += (ato_wfns[i].val2[1][2] * ato_wfns[j].val0+ ato_wfns[i].val1[1] * ato_wfns[j].val1[2]+ ato_wfns[i].val1[2] * ato_wfns[j].val1[1]+ ato_wfns[i].val0 * ato_wfns[j].val2[1][2])* d*k;
-                }
-            }
+        let plan = self.rho_plan();
+        let [gx, gy, gz] = *grid;
+        if level == 0 {
+            SIG_BUF
+                .with(|sig| V0_BUF.with(|v0| rho0_core(plan, gx, gy, gz, &mut sig.borrow_mut(), &mut v0.borrow_mut())))
+        } else {
+            SIG_BUF.with(|sig| {
+                GV_BUF.with(|wfns| rho_core(plan, gx, gy, gz, level, &mut sig.borrow_mut(), &mut wfns.borrow_mut()))
+            })
         }
-        if level>=2{
-            mol_rho2[1][0] = mol_rho2[0][1];
-            mol_rho2[2][0] = mol_rho2[0][2];
-            mol_rho2[2][1] = mol_rho2[1][2];
-        }
-        GridVals::new(mol_rho0, mol_rho1, mol_rho2)
     }
 
     // 计算自旋电子密度
@@ -210,8 +226,8 @@ impl<'m> Calculator<'m> {
     pub fn pro_rho(&self, grid: &[f64; 3]) -> f64 {
         let natm = self.mole.atoms().len();
         let mut pro_rho = 0.0;
-        for i in 0..natm {
-            let atom = self.mole.atoms().get(i as usize);
+        for atm in self.atms {
+            let atom = self.mole.atoms().get(*atm);
             let xyz = atom.xyz;
             let dist = maths::calc_dist(&xyz, &grid);
             pro_rho += rdens::get_rad_dens_v1(atom.nuc, dist);
@@ -555,4 +571,101 @@ pub fn mol_rho_dm(
         mol_rho2[2][1] = mol_rho2[1][2];
     }
     (mol_rho0, mol_rho1, mol_rho2)
+}
+
+/// level=0 的电子密度：只保留显著基函数，且只计算 val0。
+fn rho0_core(plan: &RhoPlan<'_>, gx: f64, gy: f64, gz: f64, sig: &mut Vec<usize>, v0: &mut Vec<f64>) -> GridVals {
+    sig.clear();
+    v0.clear();
+    let cars = &plan.atos.cars;
+    for k in 0..plan.idxs.len() {
+        let [ax, ay, az] = plan.xyzs[k];
+        let (dx, dy, dz) = (gx - ax, gy - ay, gz - az);
+        if dx * dx + dy * dy + dz * dz > plan.r2cut[k] {
+            continue;
+        }
+        let ato = &cars[plan.idxs[k]];
+        let (a0, _, _) = wfnfunc::cgf(&[dx, dy, dz], ato.lmn(), &ato.alps, ato.coes_norm(), 0);
+        sig.push(k);
+        v0.push(a0);
+    }
+    let mut rho0 = 0.0;
+    for a in 0..sig.len() {
+        let i = plan.idxs[sig[a]];
+        let va = v0[a];
+        if va == 0.0 {
+            continue;
+        }
+        rho0 += va * va * plan.dmat[(i, i)];
+        for b in (a + 1)..sig.len() {
+            let d = plan.dmat[(i, plan.idxs[sig[b]])];
+            if d == 0.0 {
+                continue;
+            }
+            rho0 += va * v0[b] * d * 2.0;
+        }
+    }
+    GridVals::new(rho0, [0.0; 3], [[0.0; 3]; 3])
+}
+
+/// level>=1 的电子密度及其一阶、二阶导数：同样只保留显著基函数。
+#[rustfmt::skip]
+fn rho_core(
+    plan: &RhoPlan<'_>,
+    gx: f64,
+    gy: f64,
+    gz: f64,
+    level: usize,
+    sig: &mut Vec<usize>,
+    wfns: &mut Vec<GridVals>,
+) -> GridVals {
+    sig.clear();
+    wfns.clear();
+    let cars = &plan.atos.cars;
+    for k in 0..plan.idxs.len() {
+        let [ax, ay, az] = plan.xyzs[k];
+        let (dx, dy, dz) = (gx - ax, gy - ay, gz - az);
+        if dx * dx + dy * dy + dz * dz > plan.r2cut[k] {
+            continue;
+        }
+        let ato = &cars[plan.idxs[k]];
+        let (a0, a1, a2) = wfnfunc::cgf(&[dx, dy, dz], ato.lmn(), &ato.alps, ato.coes_norm(), level);
+        sig.push(k);
+        wfns.push(GridVals::new(a0, a1, a2));
+    }
+    let mut rho0 = 0.0;
+    let mut rho1 = [0.0; 3];
+    let mut rho2 = [[0.0; 3]; 3];
+    for a in 0..sig.len() {
+        let i = plan.idxs[sig[a]];
+        let wi = wfns[a];
+        for b in a..sig.len() {
+            let d = plan.dmat[(i, plan.idxs[sig[b]])];
+            if d == 0.0 {
+                continue;
+            }
+            let k = if a == b { 1.0 } else { 2.0 };
+            let wj = wfns[b];
+            rho0 += wi.val0 * wj.val0 * d * k;
+            if level >= 1 {
+                rho1[0] += (wi.val0 * wj.val1[0] + wj.val0 * wi.val1[0]) * d * k;
+                rho1[1] += (wi.val0 * wj.val1[1] + wj.val0 * wi.val1[1]) * d * k;
+                rho1[2] += (wi.val0 * wj.val1[2] + wj.val0 * wi.val1[2]) * d * k;
+            }
+            if level >= 2 {
+                rho2[0][0] += (wi.val2[0][0] * wj.val0 + 2.0 * wi.val1[0] * wj.val1[0] + wi.val0 * wj.val2[0][0]) * d * k;
+                rho2[1][1] += (wi.val2[1][1] * wj.val0 + 2.0 * wi.val1[1] * wj.val1[1] + wi.val0 * wj.val2[1][1]) * d * k;
+                rho2[2][2] += (wi.val2[2][2] * wj.val0 + 2.0 * wi.val1[2] * wj.val1[2] + wi.val0 * wj.val2[2][2]) * d * k;
+                rho2[0][1] += (wi.val2[0][1] * wj.val0 + wi.val1[0] * wj.val1[1] + wi.val1[1] * wj.val1[0] + wi.val0 * wj.val2[0][1]) * d * k;
+                rho2[0][2] += (wi.val2[0][2] * wj.val0 + wi.val1[0] * wj.val1[2] + wi.val1[2] * wj.val1[0] + wi.val0 * wj.val2[0][2]) * d * k;
+                rho2[1][2] += (wi.val2[1][2] * wj.val0 + wi.val1[1] * wj.val1[2] + wi.val1[2] * wj.val1[1] + wi.val0 * wj.val2[1][2]) * d * k;
+            }
+        }
+    }
+    if level >= 2 {
+        rho2[1][0] = rho2[0][1];
+        rho2[2][0] = rho2[0][2];
+        rho2[2][1] = rho2[1][2];
+    }
+    GridVals::new(rho0, rho1, rho2)
 }

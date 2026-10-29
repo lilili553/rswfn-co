@@ -1,7 +1,7 @@
 fn main() {
     #[cfg(all(feature = "use-cint", feature = "use-func"))]
     {
-        let root_dir = format!("E:/code/rswfn");
+        let root_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR 未设置");
         let libs_dir = format!("{}/libs", root_dir);
         let cint_lib = format!("{}/libcint.a", libs_dir);
         let cxcs_lib = format!("{}/libxc.a", libs_dir);

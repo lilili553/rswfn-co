@@ -76,7 +76,7 @@ impl<'m> Calculator<'m> {
     }
 
     /// 获取分子中的临界点初猜
-    pub fn get_grids(&self) -> Vec<([f64; 3])> {
+    pub fn get_grids(&self) -> Vec<[f64; 3]> {
         let atoms = self.mole.atoms();
         let xyzs = atoms.xyzs();
         let mut grids = Vec::new();
